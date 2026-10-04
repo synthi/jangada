@@ -807,8 +807,9 @@ static void draw_columns(void)
     if (cur_page()->scope == SC_TRK) {                 /* TRACK LEVEL LEN PAN of the selected track */
         const track_t *t = TSEL;
         uint32_t lvl = trk_level(song.sel);
-        fmt_int(val, (int32_t)song.sel + 1);
-        draw_column(0, "TRACK", val, "/4", VAL(0u), (int32_t)song.sel * 1000 / (NTRK - 1), ICON_AUTO);
+        /* Jangada: TYPE; track 4 switches DRUM / SYNTH here, 1..3 are synths (ALGORITHM picks the track) */
+        draw_column(0, "TYPE", is_drum(t) ? "DRUM" : "SYNTH", "", song.sel == TRK_DRUM ? VAL(0u) : C_DIM,
+                    song.sel == TRK_DRUM ? (is_drum(t) ? 0 : 1000) : -1, ICON_AUTO);
         if (!lvl || t->p[P_MUTE]) {                    /* (MUTE: a turn of KNOB 2 unmutes, tracks_edit) */
             str_cpy(val, "MUTE", 12);
             unit = "";

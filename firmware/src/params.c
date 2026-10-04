@@ -287,7 +287,7 @@ static const page_t PAGES[] = {
     {"STEP", FAM_SEQ, SC_STEP, GR_ROLL, {0, 1, 2, 3}},
     {"STEP 2", FAM_SEQ, SC_STEP, GR_ROLL, {0, 4, 5, 0xFF}},   /* Jangada: STEP RTCH CHNC */
     {"PATTERN", FAM_SEQ, SC_TRACK, GR_STEPS, {P_SLEN, P_SDIV, P_SSWING, P_SGATE}},
-    {"TRACKS", FAM_TRK, SC_TRK, GR_TRK, {0, 1, 2, 3}},   /* REC button; TRACK LEVEL LEN PAN */
+    {"TRACKS", FAM_TRK, SC_TRK, GR_TRK, {0, 1, 2, 3}},   /* REC button; TYPE LEVEL LEN PAN (Jangada: TYPE) */
 };
 #define NPAGES (sizeof(PAGES) / sizeof(PAGES[0]))
 

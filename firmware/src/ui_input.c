@@ -70,8 +70,11 @@ static void tracks_edit(uint32_t slot, int32_t steps)
     int16_t *vp;
     const param_desc_t *d;
     switch (slot) {
-    case 0:
-        track_select((uint32_t)clamp((int32_t)song.sel + (steps > 0 ? 1 : -1), 0, NTRK - 1));
+    case 0:                                               /* Jangada: TYPE (ALGORITHM picks the track) */
+        if (song.sel == TRK_DRUM)
+            song.g[G_T4] = (int16_t)(steps > 0);         /* right SYNTH, left DRUM: t4_follow does the rest */
+        else
+            ui_message("TRACKS 1-3: SYNTH");
         return;
     case 1:
         if (t->p[P_MUTE]) {
