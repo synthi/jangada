@@ -108,10 +108,13 @@ typedef struct {
     uint8_t pat;                 /* sequence pattern (PATTERNS[pat - 1]), loaded only into an empty sequencer */
     int8_t x[NEDIT - 8];         /* Jangada: P_E8.. stored + 1, 0 = the engine's default; last, so the
                                   * positional initializers above stay as they are (.x = {..}) */
+    const int16_t (*set)[2];     /* Jangada: any other parameters, {P_*, value} .. {-1}: SET(..) */
 } preset_t;
 #define FX(d, c, dl, r) .fx = {(d) + 1, (c) + 1, (dl) + 1, (r) + 1}
 #define ARP(m, rt, o, g) .arp = {(m) + 1, (rt) + 1, (o) + 1, (g) + 1}
 #define PAT(n) .pat = (n)
+/* Jangada: a preset may set any track parameter (LFO, matrix, HOLD, ..): SET({P_LRATE, 8}, ..) */
+#define SET(...) .set = (const int16_t[][2]){__VA_ARGS__, {-1, 0}}
 
 struct track;
 typedef struct {

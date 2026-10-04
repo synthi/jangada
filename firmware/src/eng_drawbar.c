@@ -273,6 +273,11 @@ static const preset_t DRAWBAR_PRESETS[] = {
     {"GOSPEL", {6, 0, 0, 0, 1, 60, 40, 2}, {0, 64, 127, 45}, 0, 0, FX(0, 0, 0, 40), PAT(6)},
     {"SOFT FLUTE", {1, 0, -2, 0, 0, 10, 0, 1}, {0, 64, 127, 55}, 0, 0, FX(0, 20, 15, 55), PAT(5)},
     {"ROCK DRIVE", {7, 0, 0, 0, 0, 70, 100, 2}, {0, 64, 127, 40}, 0, 0, FX(35, 0, 10, 25), PAT(4)},
+    /* Jangada: dark / industrial */
+    {"DIRTY ORGN", {7, 0, 0, 0, 0, 60, 127, 2}, {0, 64, 127, 40}, 0, 0, FX(60, 0, 20, 40), PAT(6)},
+    /* Jangada: drones */
+    {"DRONE ORGN", {4, 4, 2, -4, 0, 0, 30, 1}, {90, 64, 127, 110}, 0, 0, FX(25, 30, 30, 100), ARP(7, 9, 1, 127),
+     SET({P_AHOLD, 1})},
 };
 
 static const engine_t ENG_DRAWBAR = {

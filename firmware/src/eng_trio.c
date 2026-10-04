@@ -363,6 +363,13 @@ static const preset_t TRIO_PRESETS[] = {
     {"SYNC LEAD", {9, 9, 0, 0, 0, 82, 30, 64}, {2, 70, 100, 40}, 18, 1, FX(0, 10, 40, 25), PAT(4)},
     {"RING BELL", {13, 0, 18, 6, 1, 96, 30, 64}, {0, 92, 0, 80}, 0, 0, FX(0, 20, 35, 55), PAT(7)},
     {"CHIP CHOIR", {1, 0, 12, 7, 1, 62, 95, 40}, {70, 90, 110, 85}, 30, 0, FX(0, 50, 20, 65), PAT(5)},
+    /* Jangada: dark / industrial */
+    {"GRIND LEAD", {9, 7, 0, 4, 0, 85, 45, 64}, {2, 70, 100, 40}, 35, 1, FX(85, 10, 35, 25),
+     SET({P_M1SRC, 2}, {P_M1DST, 4}, {P_M1AMT, 24})},
+    {"MACHINE", {12, 7, -5, 3, 1, 70, 70, 64}, {0, 40, 0, 30}, 40, 0, FX(60, 0, 40, 20), ARP(1, 2, 2, 40)},
+    /* Jangada: drones */
+    {"DRONE RING", {13, 7, -12, 12, 0, 60, 30, 64}, {120, 90, 127, 118}, 0, 0, FX(10, 50, 40, 110), ARP(7, 9, 1, 127),
+     SET({P_AHOLD, 1}, {P_LRATE, 5}, {P_LD_FLT, 20}, {P_M1SRC, 1}, {P_M1DST, 4}, {P_M1AMT, 4})},
 };
 
 static const engine_t ENG_TRIO = {

@@ -154,6 +154,7 @@ static void phrase(track_t *t, uint32_t base)
     run_to(at(1.80));
     for (i = 0; i < 5u; i++)
         input_off(t, base - 12u + CH[i]);
+    t->p[P_AHOLD] = 0;                         /* a latched (HOLD) drone: let go of it, as the user would */
     rel_at = fpos;
     dc_end = fpos + FS / 2u;
     finish();

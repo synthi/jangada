@@ -426,6 +426,12 @@ static const preset_t GRAIN_PRESETS[] = {
     {"GLITCH", {3, 64, 24, 112, 0, 100, 90, 127}, {0, 70, 100, 30}, 0, 0, FX(10, 0, 50, 25), PAT(4)},
     {"FROZEN", {0, 40, 108, 72, 0, 0, 10, 92}, {50, 100, 127, 100}, 0, 0, FX(0, 30, 20, 95), PAT(5)},
     {"SHIMMER", {1, 30, 70, 100, 12, 30, 24, 110}, {30, 90, 110, 90}, 0, 0, FX(0, 50, 40, 90), PAT(7)},
+    /* Jangada: dark / industrial */
+    {"GHOST KEYS", {0, 40, 110, 90, 0, 50, 20, 80}, {90, 90, 120, 110}, 0, 0, FX(0, 40, 40, 115),
+     SET({P_LRATE, 5}, {P_M1SRC, 1}, {P_M1DST, 4}, {P_M1AMT, 20})},
+    /* Jangada: drones */
+    {"DRONE DUST", {2, 50, 100, 120, -12, 90, 70, 70}, {110, 90, 127, 118}, 0, 0, FX(20, 30, 50, 120), ARP(7, 9, 1, 127),
+     SET({P_AHOLD, 1}, {P_LRATE, 7}, {P_M1SRC, 1}, {P_M1DST, 4}, {P_M1AMT, 30})},
 };
 
 static const engine_t ENG_GRAIN = {

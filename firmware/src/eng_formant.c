@@ -216,6 +216,9 @@ static const preset_t FORMANT_PRESETS[] = {
     {"VOX LEAD", {32, 0, 0, 2, 90, 8, 72, 0}, {6, 70, 105, 55}, 0, 1, FX(0, 20, 45, 40), PAT(4)},
     {"WOW BASS", {95, 0, 68, 0, 100, 0, 80, 0}, {0, 70, 70, 30}, 0, 1, FX(10, 0, 10, 10), PAT(8)},
     {"WHISPER", {0, 95, 88, 3, 50, 120, 50, 0}, {50, 90, 110, 90}, 0, 0, FX(0, 40, 30, 70), PAT(5)},
+    /* Jangada: drones */
+    {"DRONE VOX", {10, 70, 120, -12, 30, 40, 70, 20}, {110, 90, 127, 120}, 0, 0, FX(0, 70, 20, 115), ARP(7, 9, 1, 127),
+     SET({P_AHOLD, 1}, {P_LRATE, 4}, {P_M1SRC, 1}, {P_M1DST, 3}, {P_M1AMT, 30})},
 };
 
 static const engine_t ENG_FORMANT = {

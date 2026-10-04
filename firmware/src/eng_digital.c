@@ -122,6 +122,11 @@ static const preset_t DIGITAL_PRESETS[] = {
     {"PAD", {5, 2, 1, 3, 40, 90, 10, 0}, {80, 90, 110, 95}, 0, 0, FX(0, 60, 30, 70), PAT(5)},
     {"MARIMBA", {4, 4, 1, 1, 60, 30, 0, 0}, {0, 80, 0, 60}, 0, 0, FX(0, 0, 25, 40), PAT(3)},
     {"FUNK KEY", {3, 1, 3, 5, 90, 25, 20, 0}, {0, 45, 30, 30}, 0, 0, FX(0, 20, 30, 20), PAT(6)},
+    /* Jangada: dark / industrial */
+    {"METAL HIT", {4, 13, 6, 0, 110, 30, 60, 0}, {0, 50, 0, 40}, 0, 0, FX(80, 0, 30, 40), PAT(6)},
+    /* Jangada: drones */
+    {"DRONE FM", {5, 2, 1, 3, 50, 127, 30, 0}, {110, 90, 127, 120}, 0, 0, FX(0, 60, 30, 100), ARP(7, 9, 1, 127),
+     SET({P_AHOLD, 1}, {P_LRATE, 10}, {P_M1SRC, 1}, {P_M1DST, 7}, {P_M1AMT, 25}, {P_M2SRC, 5}, {P_M2DST, 9}, {P_M2AMT, 15})},
 };
 
 static const engine_t ENG_DIGITAL = {

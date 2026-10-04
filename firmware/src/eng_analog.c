@@ -95,6 +95,13 @@ static const preset_t ANALOG_PRESETS[] = {
     {"BRASS", {0, 10, 64, 0, 45, 20, 10, 64}, {35, 70, 90, 45}, 40, 0, FX(0, 20, 20, 40), PAT(6)},
     {"WIND", {0, 0, 0, 90, 30, 90, 0, 0}, {60, 90, 60, 80}, 50, 0, FX(0, 30, 30, 70), PAT(5)},
     {"STRINGS", {0, 25, 64, 0, 70, 10, 0, 32}, {70, 90, 115, 90}, 5, 0, FX(0, 60, 20, 70), PAT(5)},
+    /* Jangada: dark / industrial */
+    {"RUST BASS", {0, 14, 64, 6, 38, 70, 110, 40}, {0, 60, 90, 25}, 30, 1, FX(70, 0, 0, 12), PAT(2)},
+    {"HURT PAD", {4, 26, 64, 10, 55, 25, 15, 30}, {95, 90, 115, 105}, 6, 0, FX(0, 70, 25, 95),
+     SET({P_LRATE, 18}, {P_LD_FLT, 16}, {P_LD_SHP, 30}, {P_M1SRC, 5}, {P_M1DST, 4}, {P_M1AMT, 14})},
+    /* Jangada: drones */
+    {"DRONE SAW", {0, 40, 64, 20, 45, 35, 40, 20}, {120, 90, 127, 120}, 0, 0, FX(15, 60, 35, 110), ARP(7, 9, 1, 127),
+     SET({P_AHOLD, 1}, {P_LRATE, 6}, {P_LD_FLT, 24}, {P_M1SRC, 1}, {P_M1DST, 8}, {P_M1AMT, 18}, {P_M2SRC, 5}, {P_M2DST, 4}, {P_M2AMT, 20})},
 };
 
 static const engine_t ENG_ANALOG = {

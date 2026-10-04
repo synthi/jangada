@@ -91,8 +91,8 @@ static void host_preset_req(track_t *t, uint32_t e, uint32_t pi)
     uint32_t i;
     t->eng_req = (uint8_t)e;
     t->preset = (uint8_t)(pi % ENGINES[e]->npresets);
-    for (i = 0; i < 8u; i++)
-        t->p[P_E0 + i] = p->e[i];
+    for (i = 0; i < NEDIT; i++)
+        t->p[P_E0 + i] = (int16_t)(i < 8u ? p->e[i] : p->x[i - 8u] ? p->x[i - 8u] - 1 : ENGINES[e]->edit[i].def);
     t->p[P_ATK] = p->env[0];
     t->p[P_DEC] = p->env[1];
     t->p[P_SUS] = p->env[2];
@@ -102,6 +102,11 @@ static void host_preset_req(track_t *t, uint32_t e, uint32_t pi)
     for (i = 0; i < 4u; i++) {
         t->p[P_DIST + i] = (int16_t)(p->fx[i] ? p->fx[i] - 1 : FX_DEF[i]);
         t->p[P_AMODE + i] = (int16_t)(p->arp[i] ? p->arp[i] - 1 : TP[P_AMODE + i].def);
+    }
+    if (p->set) {                                   /* as ui.c apply_preset_to */
+        const int16_t (*sp)[2];
+        for (sp = p->set; (*sp)[0] >= 0; sp++)
+            t->p[(*sp)[0]] = (*sp)[1];
     }
 }
 static void host_preset(track_t *t, uint32_t e, uint32_t pi)

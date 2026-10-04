@@ -313,6 +313,10 @@ class Builder:
             a, d, s_, r = ENV[k]
             loop = 0 if k == "kit" else 1
             L.append(f'    {{"{name}", {{{i}, 0, 0, {loop}, 127, 0, 0, 0}}, {{{a}, {d}, {s_}, {r}}}, 0, 0}},')
+        piano = next((i for i, (n, _, _) in enumerate(named) if n == "PIANO"), None)
+        if piano is not None:                    # Jangada: dark piano textures (after the set presets)
+            L.append(f'    {{"QUIET KEYS", {{{piano}, 0, 0, 1, 80, 0, 0, 0}}, {{0, 127, 127, 90}}, 0, 0, FX(0, 10, 45, 100)}},')
+            L.append(f'    {{"BROKEN KEY", {{{piano}, -12, 90, 1, 70, 0, 60, 0}}, {{0, 127, 127, 70}}, 0, 0, FX(40, 0, 50, 70)}},')
         L.append("};")
         names = ", ".join(f'"{n}"' for n, _, _ in named)
         L.append("#define SMP_SET_NAMES_INIT " + names)

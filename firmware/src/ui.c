@@ -287,6 +287,14 @@ static void apply_preset_to(track_t *t, uint32_t pi)
             t->p[P_DIST + i] = (int16_t)(pr->fx[i] ? pr->fx[i] - 1 : FX_DEF[i]);
             t->p[P_AMODE + i] = (int16_t)(pr->arp[i] ? pr->arp[i] - 1 : TP[P_AMODE + i].def);
         }
+        if (pr->set) {                                 /* Jangada: the rest of the sound (LFO, matrix, ..) */
+            const int16_t (*sp)[2];
+            for (sp = pr->set; (*sp)[0] >= 0; sp++)
+                if ((*sp)[0] < P_COUNT && !param_kept((uint32_t)(*sp)[0])) {
+                    const param_desc_t *d = track_desc(t, (uint32_t)(*sp)[0]);
+                    t->p[(*sp)[0]] = (int16_t)clamp((*sp)[1], d->min, d->max);
+                }
+        }
         if (pr->pat && pr->pat <= NPATTERNS && seq_replaceable(t))
             load_pat16(t, PATTERNS[pr->pat - 1u].note, PATTERNS[pr->pat - 1u].flags);
     }
