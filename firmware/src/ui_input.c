@@ -289,7 +289,25 @@ static void ui_input(void)
     uint32_t pressed = fm1_input_edges(0), notes = fm1_input_note_edges(), now = fm1_ticks(), id, b, k, fam = cur_fam();
     uint32_t home = btn_hold(&ui.home_t0, B_HOME, now, 1);
     uint32_t rec = btn_hold(&ui.rec_t0, B_REC, now, !ui.menu && (fam == FAM_SEQ || fam == FAM_ARP || fam == FAM_TRK));
+    uint32_t arp = btn_hold(&ui.arp_t0, B_ARP, now, !ui.menu);
     int32_t s;
+    if (arp == BT_HOLD) {                               /* Jangada: ARP held: every latched (HOLD) chord off */
+        uint32_t i, any = 0;
+        for (i = 0; i < NPART; i++)
+            if (trk[i].p[P_AHOLD] && trk[i].nheld && !trk[i].arp_phys)
+                any |= 1u << i;
+        if (any) {
+            latch_off_req |= (uint8_t)any;
+            ui_message("DRONE OFF");                    /* it fades with its release; */
+        } else {
+            for (i = 0; i < NPART; i++)                 /* held again: the tails stop now */
+                for (k = 0; k < NVOICE; k++)
+                    if (trk[i].v[k].active && !trk[i].v[k].gate)
+                        any |= 1u << i;
+            hush_req |= (uint8_t)any;
+            ui_message(any ? "SILENCE" : "NO DRONE");
+        }
+    }
     if (home == BT_HOLD) {                              /* HOME held: open the menu, or leave it */
         if (ui.menu) {
             menu_close();

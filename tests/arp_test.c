@@ -100,6 +100,36 @@ int main(void)
         arp_run(t, sizeof want, got);
         expect("UP at 4BAR", got, want, sizeof want);
     }
+    {   /* ARP held (ui_input): a latched drone stops, held again its tails go too */
+        static int32_t o[2 * CTL];
+        uint32_t b, k, on = 0;
+        memset(trk, 0, sizeof trk);
+        memset(&song, 0, sizeof song);
+        host_tracks_init();
+        song.g[G_BPM] = 120;
+        t = &trk[0];
+        host_preset(t, 0, 14);                                   /* DRONE SAW: RPT, 4BAR, HOLD */
+        input_on(t, 48, 100);
+        input_on(t, 55, 100);
+        input_off(t, 48);
+        input_off(t, 55);
+        for (b = 0; b < 200u; b++)
+            mix_block(o, CTL);
+        assert(t->nheld == 2 && !t->arp_phys);                   /* latched: it keeps playing */
+        latch_off_req = 1;
+        mix_block(o, CTL);
+        assert(t->nheld == 0 && t->arp_nch == 0);
+        for (k = 0; k < NVOICE; k++)
+            on += t->v[k].active;
+        assert(on > 0);                                          /* fading with its long release */
+        hush_req = 1;
+        for (b = 0; b < 3u; b++)
+            mix_block(o, CTL);
+        for (k = 0, on = 0; k < NVOICE; k++)
+            on += t->v[k].active;
+        assert(on == 0);
+        printf("%-46s ok\n", "DRONE OFF (ARP held), SILENCE (held again)");
+    }
     puts("arp: all ok");
     return 0;
 }

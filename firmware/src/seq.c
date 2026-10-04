@@ -34,6 +34,8 @@ static uint8_t kb_note[27], kb_trk[27];  /* per key: the note it started and on 
 static uint8_t last_note = 60;
 static volatile uint8_t transport_req;   /* 1 start, 2 stop (from the UI) */
 static volatile uint8_t panic_req;       /* bit per track: release every sounding note (preset / engine change) */
+static volatile uint8_t latch_off_req;   /* Jangada: bit per track: drop the latched (HOLD) chord: ARP held */
+static volatile uint8_t hush_req;        /* Jangada: bit per track: fade every voice now: ARP held again */
 
 /* the drum track on the keys: 27 useful GM notes, lowest key first */
 static const uint8_t DRUM_KEYS[27] = {
@@ -567,6 +569,24 @@ static void events_block(uint32_t n)
     }
     pr = panic_req;
     panic_req = 0;
+    {
+        uint32_t lo = latch_off_req;
+        latch_off_req = 0;
+        for (i = 0; i < NPART; i++)
+            if ((lo >> i) & 1u && !trk[i].arp_phys) {   /* keys still down: their own chord, kept */
+                trk[i].nheld = 0;
+                arp_silence(&trk[i]);
+            }
+        lo = hush_req;
+        hush_req = 0;
+        for (i = 0; i < NPART; i++)
+            if ((lo >> i) & 1u) {
+                uint32_t j;
+                for (j = 0; j < NVOICE; j++)
+                    if (trk[i].v[j].active && !trk[i].v[j].gate)
+                        voice_kill(&trk[i].v[j]);       /* the release tails only: held keys keep sounding */
+            }
+    }
     for (i = 0; i < NTRK; i++) {
         track_t *t = &trk[i];
         if ((pr >> i) & 1u) {

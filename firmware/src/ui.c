@@ -60,6 +60,7 @@ static struct {
     uint8_t bpm_t;               /* frames the BPM stays highlighted after a SELECT turn */
     uint8_t arm, arm_t;          /* destructive action armed: param id, frames left to confirm */
     uint32_t rec_t0;             /* REC press time (btn_hold) */
+    uint32_t arp_t0;             /* Jangada: ARP press time (btn_hold): held = DRONE OFF */
     uint8_t confirm;             /* 1 = "clear the sequence?" (REC held on SEQ / ARP), 2 = "clear track n?" (TRACKS) */
     uint8_t confirm_trk;         /* the track the dialog clears */
     uint8_t uslot;               /* SAVE > USER: the selected user preset slot */
