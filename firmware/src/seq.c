@@ -135,23 +135,31 @@ static void arp_remove(track_t *t, uint32_t note)
     t->nheld = (uint8_t)k;
 }
 
+/* the sounding arp note or RPT chord off */
+static void arp_silence(track_t *t)
+{
+    uint32_t i;
+    if (t->arp_note)
+        trk_note_off(t, t->arp_note);
+    t->arp_note = 0;
+    for (i = 0; i < t->arp_nch; i++)
+        trk_note_off(t, t->arp_chord[i]);
+    t->arp_nch = 0;
+}
+
 static void arp_tick(track_t *t, uint32_t n)
 {
     uint32_t period = div_samples((uint32_t)t->p[P_ARATE]), cnt, list[64], len = 0, i, j, o;
     int32_t sw = t->p[P_ASWING] * (int32_t)period / 250;
-    if (t->arp_note) {
-        if (t->arp_off <= n) {
-            trk_note_off(t, t->arp_note);
-            t->arp_note = 0;
-        } else {
+    if (t->arp_note || t->arp_nch) {
+        if (t->arp_off <= n)
+            arp_silence(t);
+        else
             t->arp_off -= n;
-        }
     }
     if (!t->p[P_AMODE] || !t->nheld) {
-        if (!t->nheld && t->arp_note) {
-            trk_note_off(t, t->arp_note);
-            t->arp_note = 0;
-        }
+        if (!t->nheld)
+            arp_silence(t);
         return;
     }
     t->arp_pos += n;
@@ -185,17 +193,30 @@ static void arp_tick(track_t *t, uint32_t n)
     case 4:
         j = rng() % len;
         break;
+    case 6: {                                       /* UDI: up and down, both ends played twice */
+        uint32_t k = t->arp_idx % (2u * len);
+        j = k < len ? k : 2u * len - 1u - k;
+        break;
+    }
+    case 7:                                         /* RPT: the whole chord on every step (drones) */
+        j = 0;
+        break;
     default:
         j = t->arp_idx % len;
         break;
     }
-    if (t->arp_note)
-        trk_note_off(t, t->arp_note);
-    t->arp_note = 0;
+    arp_silence(t);
     if ((uint32_t)(rng() & 127u) <= (uint32_t)t->p[P_APROB]) {
-        t->arp_note = (uint8_t)list[j];
         t->arp_off = period * (uint32_t)t->p[P_AGATE] / 128u;
-        trk_note_on(t, t->arp_note, 100);
+        if (t->p[P_AMODE] == 7) {
+            for (i = 0; i < len && t->arp_nch < NVOICE; i++) {
+                t->arp_chord[t->arp_nch++] = (uint8_t)list[i];
+                trk_note_on(t, list[i], 100);
+            }
+        } else {
+            t->arp_note = (uint8_t)list[j];
+            trk_note_on(t, t->arp_note, 100);
+        }
     }
 }
 
@@ -515,6 +536,7 @@ static void events_block(uint32_t n)
             t->nheld = 0;
             t->arp_phys = 0;
             t->arp_note = 0;
+            t->arp_nch = 0;
         }
         if (i < NPART)
             engine_block(t);                          /* engine switch: fade, then switch (voice.c) */
@@ -523,10 +545,7 @@ static void events_block(uint32_t n)
             t->nheld = 0;
             if (!t->p[P_AMODE])
                 t->arp_phys = 0;
-            if (t->arp_note) {
-                trk_note_off(t, t->arp_note);
-                t->arp_note = 0;
-            }
+            arp_silence(t);
         }
         t->armp = t->p[P_AMODE];
         t->aholdp = t->p[P_AHOLD];

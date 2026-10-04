@@ -158,6 +158,8 @@ typedef struct track {
     uint32_t arp_pos;            /* q8 samples into the current arp step */
     uint32_t arp_idx;
     uint8_t arp_note;            /* sounding arp note, 0 = none */
+    uint8_t arp_chord[NVOICE];   /* RPT: the sounding chord (arp_nch notes) */
+    uint8_t arp_nch;
     uint32_t arp_off;            /* q8 sample time of its note-off */
     /* sequencer */
     step_t step[NSTEP];
