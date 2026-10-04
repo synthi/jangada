@@ -1,0 +1,48 @@
+# Jangada release: push a tag vX.Y[-suffix] (one digit each), get jangada-X.Y[-suffix].fwsc on a release.
+name: release
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      JIELI_TOOLCHAIN: ${{ github.workspace }}/.jieli/toolchain
+      AC79_SDK: ${{ github.workspace }}/.ac79
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install Pillow
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .jieli
+            .ac79
+          key: jieli-${{ hashFiles('tools/get_toolchain.sh', 'tools/get_sdk_files.sh') }}
+      - run: |
+          [ -e .jieli/toolchain ] || tools/get_toolchain.sh .jieli
+          tools/get_sdk_files.sh .ac79
+      - name: Build and test
+        run: |
+          ./build.sh
+          sh tests/run_tests.sh
+          ./build.sh --release "${GITHUB_REF_NAME#v}"
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          f="build/jangada-${GITHUB_REF_NAME#v}.fwsc"
+          sha256sum "$f" > "$f.sha256"
+          gh release create "$GITHUB_REF_NAME" "$f" "$f.sha256" --prerelease --generate-notes \
+            --title "Jangada ${GITHUB_REF_NAME#v}"

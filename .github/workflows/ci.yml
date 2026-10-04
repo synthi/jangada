@@ -1,0 +1,49 @@
+# Jangada CI: firmware build, every host test, and a reproducibility check.
+name: ci
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04            # x86-64: the JieLi toolchain runs natively
+    env:
+      JIELI_TOOLCHAIN: ${{ github.workspace }}/.jieli/toolchain
+      AC79_SDK: ${{ github.workspace }}/.ac79
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0             # the build date comes from the last commit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install Pillow
+
+      - name: JieLi toolchain and SDK files (cached)
+        uses: actions/cache@v4
+        with:
+          path: |
+            .jieli
+            .ac79
+          key: jieli-${{ hashFiles('tools/get_toolchain.sh', 'tools/get_sdk_files.sh') }}
+      - run: |
+          [ -e .jieli/toolchain ] || tools/get_toolchain.sh .jieli
+          tools/get_sdk_files.sh .ac79
+
+      - name: Build
+        run: ./build.sh
+      - name: Host tests
+        run: sh tests/run_tests.sh
+      - name: Reproducible (a second build in another directory)
+        run: |
+          git clone -q . /tmp/again
+          (cd /tmp/again && ./build.sh > /dev/null)
+          cmp build/felucca.fwsc /tmp/again/build/felucca.fwsc
+          sha256sum build/felucca.fwsc
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jangada-${{ github.sha }}
+          path: build/felucca.fwsc
