@@ -1,117 +1,132 @@
+<p align="center"><img src="docs/jangada.gif" alt="Jangada" width="720"></p>
+
+<p align="center">
+<b>English</b> · <a href="README.pt-BR.md">Português</a><br>
+<a href="https://github.com/zednaked/jangada/actions/workflows/ci.yml"><img src="https://github.com/zednaked/jangada/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+<img src="https://img.shields.io/badge/license-GPL--3.0-ff14aa" alt="GPL-3.0">
+<img src="https://img.shields.io/badge/M--VAVE-FM--1-ff14aa" alt="M-VAVE FM-1">
+</p>
+
 # Jangada 🛶
 
-Firmware multi-motor para o **M-VAVE FM-1**, um fork do
-[Felucca](https://github.com/hugelton/Felucca) de Leo Kuroshita (Hügelton Instruments).
-A felucca é o barco à vela do Nilo; a jangada é a nossa.
+**Alternative firmware for the M-VAVE FM-1** — nine synth engines, a superwave analog, a
+modulation matrix, latched drones, ratchets and four tracks, on a €70 pocket synth.
+A fork of [Felucca](https://github.com/hugelton/Felucca) by Leo Kuroshita (Hügelton Instruments).
+A *felucca* is a Nile sailboat; a *jangada* is the Brazilian one.
 
-> **Alfa.** Use por sua conta e risco. O boot do FM-1 nunca é tocado e dá para voltar ao
-> firmware oficial a qualquer momento (veja abaixo).
+> **Alpha.** Use at your own risk. The FM-1's boot area is never touched, and you can go back to
+> the official firmware at any time.
 
-## Instalar no Linux
+## Listen
 
-Conecte o FM-1 por um cabo USB de dados e rode:
+Rendered by the firmware's own DSP (the same C code, run on a PC):
+
+| Dark / industrial | Drones | Superwave |
+|---|---|---|
+| [RUST BASS](docs/sounds/rust-bass.mp3) | [DRONE SAW](docs/sounds/drone-saw.mp3) | [SUPER SAW](docs/sounds/super-saw.mp3) |
+| [HURT PAD](docs/sounds/hurt-pad.mp3) | [DRONE RING](docs/sounds/drone-ring.mp3) | [SUPER PAD](docs/sounds/super-pad.mp3) |
+| [GRIND LEAD](docs/sounds/grind-lead.mp3) | [DRONE FM](docs/sounds/drone-fm.mp3) | [HP SHIMMER](docs/sounds/hp-shimmer.mp3) |
+| [MACHINE](docs/sounds/machine.mp3) | [DRONE DUST](docs/sounds/drone-dust.mp3) | [four tracks at once](docs/sounds/four-tracks.mp3) |
+| [METAL HIT](docs/sounds/metal-hit.mp3) | [DRONE VOX](docs/sounds/drone-vox.mp3) | |
+| [BROKEN BELL](docs/sounds/broken-bell.mp3) · [STATIC](docs/sounds/static.mp3) | [DRONE ORGAN](docs/sounds/drone-organ.mp3) | |
+| [QUIET KEYS](docs/sounds/quiet-keys.mp3) · [BROKEN KEY](docs/sounds/broken-key.mp3) | | |
+| [GHOST KEYS](docs/sounds/ghost-keys.mp3) · [DIRTY ORGAN](docs/sounds/dirty-organ.mp3) | | |
+
+## Install
+
+**Linux** — plug the FM-1 in with a USB data cable:
 
 ```
-./instalar-linux.sh                    # a última versão publicada
-./instalar-linux.sh build/felucca.fwsc # um build seu
-./instalar-linux.sh --original         # volta para o firmware oficial da M-VAVE (V15)
-./instalar-linux.sh --info             # mostra o que está rodando
-./instalar-linux.sh --console          # libera o console serial (regra udev, pede sudo)
+./instalar-linux.sh                    # the latest release
+./instalar-linux.sh --original         # back to M-VAVE's official firmware (V15)
+./instalar-linux.sh --info             # what the FM-1 is running
+./instalar-linux.sh --console          # serial console access (a udev rule, asks for sudo)
 ```
 
-O script prepara sozinho um ambiente Python (`mido` + `python-rtmidi`) em
-`~/.local/share/jangada/`. No Chrome/Edge, o instalador web do Felucca também funciona.
+It sets up its own Python environment (`mido` + `python-rtmidi`) in `~/.local/share/jangada/`.
+**Mac / Windows**: Felucca's [web installer](https://hugelton.github.io/Felucca/) (Chrome or Edge)
+installs the `.fwsc` from the [releases](https://github.com/zednaked/jangada/releases) too.
 
-## O que a Jangada traz
+## What's new over Felucca
 
-Tudo o que o Felucca tem (9 motores, 4 trilhas, sequencer de 64 passos, editor web), mais:
-
-### Som
-- **ANALOG turbinado** (EDIT 3 / 4): **SUPR** superwave (até 6 cópias desafinadas do
-  oscilador), **SDTN** abertura, **SUB** quadrada uma oitava abaixo, **DRFT** desafinação lenta
-  por voz, **FTYP** filtro LP12 / LP24 / BP / HP. Com muitas vozes o superwave usa menos cópias,
-  para caber na CPU (8 vozes de SUPER SAW: 55 %).
-- **Matriz de modulação**: botão LFO → páginas **MOD 1–4**. Cada slot: origem (LFO, ENV, VEL,
-  KEY, RND) → destino (filtro, pitch, forma ou qualquer parâmetro do motor) × quantidade.
-- **16 parâmetros por motor** (eram 8): as páginas EDIT 3 / 4 aparecem quando o motor os tem.
-- **Pacote de sons**:
-  - escuros / industriais: RUST BASS, HURT PAD, SUPER SAW, SUPER PAD, HP SHIMMER (ANALOG),
-    GRIND LEAD, MACHINE (TRIO), METAL HIT (DIGITAL), BROKEN BEL (PHASE), STATIC (LOFI),
-    QUIET KEYS, BROKEN KEY (SAMPLE), GHOST KEYS (GRAIN), DIRTY ORGN (WHEEL);
-  - drones: DRONE SAW, DRONE RING, DRONE FM, DRONE DUST, DRONE VOX, DRONE ORGN.
-- **Hi-hats e crash** do kit GM tocam a própria amostra (no Felucca soavam como toms).
+### Sound
+- **A bigger ANALOG** (EDIT 3 / 4): **SUPR** superwave (up to 6 detuned copies of the
+  oscillator), **SDTN** spread, **SUB** a square an octave down, **DRFT** slow per-voice drift,
+  **FTYP** LP12 / LP24 / BP / HP. With many voices the superwave keeps fewer copies, to fit the
+  CPU (8 voices of SUPER SAW: 55 % on the FM-1).
+- **Modulation matrix**: LFO button → pages **MOD 1–4**. Each slot: source (LFO, ENV, VEL, KEY,
+  RND) → target (filter, pitch, shape or any engine parameter) × amount.
+- **16 parameters per engine** (Felucca has 8).
+- **20 new presets**: dark and industrial textures, superwaves and six drones.
+- The GM kit's **hi-hats and crash** play their own samples (they sounded like toms).
 
 ### Drones
-Os presets DRONE usam o arpejador em **RPT** a cada **4BAR** com **HOLD**: toque um acorde,
-solte, e ele continua respirando sozinho, inclusive enquanto você toca outras trilhas.
-- **Segure ARP** → DRONE OFF: solta os acordes presos (saem pelo release do preset).
-- **Segure ARP de novo** → SILENCE: as caudas param na hora.
+The DRONE presets run the arpeggiator in **RPT** every **4 bars** with **HOLD**: play a chord,
+let go, and it keeps breathing on its own — also while you play the other tracks.
+- **Hold ARP** → DRONE OFF: the latched chords are released (they fade with the preset).
+- **Hold ARP again** → SILENCE: the tails stop now.
 
-Para sequenciar um drone: arp OFF, PATTERN com **DIV 4BAR**, um acorde por passo (cada passo
-dura 4 compassos).
+To sequence a drone: arp OFF, PATTERN **DIV 4BAR**, one chord a step (each step lasts 4 bars).
 
-### Arpejador e sequencer
-- Arpejador: modos **UDI** (sobe e desce repetindo as pontas) e **RPT** (o acorde inteiro a cada
-  passo); divisões **1/2, 1/1, 2BAR, 4BAR** (também no sequencer).
-- Sequencer: página **STEP 2** com **RTCH** (ratchet x1–x4) e **CHNC** (chance 100/75/50/25 %)
-  por passo.
+### Arpeggiator and sequencer
+- Arp modes **UDI** (up-down, ends repeated) and **RPT** (the whole chord each step); divisions
+  **1/2, 1/1, 2BAR, 4BAR** (sequencer too).
+- **STEP 2** page: **RTCH** ratchet x1–x4 and **CHNC** chance 100/75/50/25 % per step.
 
-### Trilhas
-- **Trilha 4: DRUM ou SYNTH.** Em **TRACKS**, escolha a trilha 4 com o ALGORITHM e gire o
-  **knob 1 (TYPE)**: SYNTH a transforma numa quarta parte de synth (motor, preset, arp,
-  sequencer, MIDI canal 4); DRUM volta ao kit GM. Também em GLO → DRUMS → T4.
+### Tracks
+- **Track 4: DRUM or SYNTH.** On **TRACKS**, pick track 4 with ALGORITHM and turn **knob 1
+  (TYPE)**: SYNTH makes it a fourth synth part (engine, preset, arp, sequencer, MIDI channel 4);
+  DRUM brings the GM kit back.
 
-### Tela
-- Paleta **CHOQUE** (rosa-choque) como padrão; as outras continuam no menu (segure HOME → COLOR).
+### Screen and storage
+- The **CHOQUE** palette (shocking pink) by default; the others stay in the menu (hold HOME → COLOR).
+- Projects (**JNG1**) and user presets (**UPB2**) store every value with a **stable key**:
+  parameters can be added or moved without losing what you saved. Felucca's projects and
+  presets are read and converted.
 
-### Salvar sem medo
-- Projetos (formato **JNG1**) e presets de usuário (banco **UPB2**) guardam cada valor com uma
-  **chave estável**: parâmetros podem ser acrescentados ou movidos sem perder o que foi salvo.
-  Projetos e presets do Felucca são lidos e convertidos.
-
-## Ferramentas
+## Tools
 
 | | |
 |---|---|
-| `tools/fm1_console.py status` | estado do aparelho (CPU, áudio, USB, bateria) |
-| `tools/fm1_console.py check` | teste no aparelho: CPU, atrasos de áudio, reinícios |
-| `tools/fm1_console.py voices` | o que soa em cada trilha e por quê |
-| `tools/fm1_console.py preset E I [T]` | carrega o preset I do motor E na trilha T |
-| `tools/fm1_console.py t4 synth\|drum` | tipo da trilha 4 |
-| `tools/fm1_console.py droneoff` | como segurar ARP |
-| `tools/fm1_console.py color CHOQUE` | paleta da tela |
+| `tools/fm1_console.py status` | CPU, audio, USB, battery |
+| `tools/fm1_console.py check` | on-device test: CPU peak, late audio, resets |
+| `tools/fm1_console.py voices` | what sounds on each track, and why |
+| `tools/fm1_console.py preset E I [T]` | load preset I of engine E on track T |
+| `tools/fm1_console.py t4 synth\|drum` | track 4's type |
+| `tools/fm1_console.py droneoff` | as holding ARP |
+| `tools/fm1_console.py color CHOQUE` | the screen palette |
 
-## Compilar e testar
+## Build and test
 
-Veja [BUILDING.md](BUILDING.md). No Linux x86-64 o toolchain da JieLi roda nativo, sem Docker:
+See [BUILDING.md](BUILDING.md). On Linux x86-64 JieLi's toolchain runs natively, no Docker:
 
 ```
-tools/get_toolchain.sh        # o toolchain, em ~/.jieli
-tools/get_sdk_files.sh        # só os 3 arquivos do SDK AC79 que o pacote usa
+tools/get_toolchain.sh        # the toolchain, in ~/.jieli
+tools/get_sdk_files.sh        # only the 3 files of the AC79 SDK the package needs
 ./build.sh                    # build/felucca.fwsc
-sh tests/run_tests.sh         # todos os testes no PC
+sh tests/run_tests.sh         # every test, on the PC
 ```
 
-- O **build é reprodutível**: a data vem do último commit; dois builds dão o mesmo arquivo.
-- Os testes cobrem som (renders com impressão digital), saúde (clipping, DC, notas presas),
-  orçamento de CPU (contador de instruções no Linux e no Mac), formatos, arp, steps, matriz,
-  trilha 4, instalador e editor web. As tabelas do simulador do editor são geradas a partir do
-  firmware (`tools/gen_editor_tables.py`).
-- **CI** no GitHub Actions a cada push; uma tag `vX.Y[-sufixo]` publica o `.fwsc` numa release.
+- **Reproducible builds**: the date comes from the last commit; two builds give the same bytes.
+- The tests cover the sound (fingerprinted renders of every preset), health (clipping, DC, stuck
+  notes), CPU budgets (instruction counters on Linux and the Mac), storage formats, arp, steps,
+  the matrix, track 4, the installer and the web editor, whose mock tables are generated from
+  the firmware (`tools/gen_editor_tables.py`).
+- **CI** on every push; a `vX.Y[-suffix]` tag publishes the `.fwsc` in a release.
 
-## Para onde vamos
+## Next
 
-- **FM de 6 operadores** compatível com patches de DX7 (porte do msfa/Dexed).
-- MIDI completo (pitch bend, sustain, clock), backup de presets em `.syx`.
-- Uma revisão sutil da interface, para legibilidade.
+- A **6-operator FM** engine that loads DX7 patches (a port of msfa / Dexed).
+- Full MIDI (pitch bend, sustain, clock), `.syx` preset backup.
+- A subtle UI pass, for legibility.
 
-Correções que servem a todos vão também como PR para o Felucca.
+Fixes that help everyone also go upstream to Felucca as pull requests.
 
-## Créditos e licença
+## Credits and license
 
-Jangada é GPL-3.0-only, como o Felucca. Todo o trabalho original é de
-**Leo Kuroshita (@kurogedelic), Hügelton Instruments**, veja [README.felucca.md](README.felucca.md)
-e [LICENSING.md](LICENSING.md) para os créditos completos (fontes, samples, motores).
+Jangada is GPL-3.0-only, as Felucca is. The original work is **Leo Kuroshita's (@kurogedelic),
+Hügelton Instruments** — see [README.felucca.md](README.felucca.md) and [LICENSING.md](LICENSING.md)
+for the full credits (fonts, samples, engines).
 
-M-VAVE e FM-1 são marcas de seus donos. A Jangada não é afiliada nem endossada por eles,
-nem pelo Felucca.
+M-VAVE and FM-1 are trademarks of their owners. Jangada is not affiliated with or endorsed by
+them, nor by Felucca.
