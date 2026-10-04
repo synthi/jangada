@@ -243,10 +243,38 @@ static void con_params(void)
     }
 }
 
+/* color [N | NAME]: the screen palette, saved like the HOME-hold COLOR menu (Jangada) */
+static void con_color(const char *p)
+{
+    int ok;
+    uint32_t i, n = con_num(&p, &ok);
+    if (!ok)
+        for (i = 0; i < NPALETTES; i++)
+            if (con_word(&p, PALETTES[i].name)) {
+                n = i;
+                ok = 1;
+            }
+    if (ok && n < NPALETTES) {
+        settings.palette = n;
+        palette_set(n);
+        settings_save();
+        ui.force = 1;
+    } else if (*p) {
+        con_puts("usage: color [N | NAME]\r\n");
+    }
+    for (i = 0; i < NPALETTES; i++) {
+        con_puts(i == settings.palette ? "* " : "  ");
+        con_dec((int32_t)i);
+        con_putc(' ');
+        con_puts(PALETTES[i].name);
+        con_puts("\r\n");
+    }
+}
+
 static void con_exec(const char *p)
 {
     if (con_word(&p, "help") || con_word(&p, "?"))
-        con_puts("status  dbg  crash  params  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
+        con_puts("status  dbg  crash  params  color [N|NAME]  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
     else if (con_word(&p, "status"))
         con_status();
     else if (con_word(&p, "dbg"))
@@ -255,6 +283,8 @@ static void con_exec(const char *p)
         con_crash();
     else if (con_word(&p, "params"))
         con_params();
+    else if (con_word(&p, "color"))
+        con_color(p);
     else if (con_word(&p, "memr"))
         con_memr(p);
 #if FELUCCA_FLASH

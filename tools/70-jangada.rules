@@ -1,0 +1,6 @@
+# Jangada / Felucca on the M-VAVE FM-1: let the logged-in user open the USB serial console
+# (/dev/ttyACM*) without joining the uucp/dialout group. Install:
+#   sudo cp tools/70-jangada.rules /etc/udev/rules.d/ && sudo udevadm control --reload && sudo udevadm trigger
+# 1209:0001 = the app (CDC console + MIDI), 1209:0002 = its update loader.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="0001", TAG+="uaccess"
+SUBSYSTEM=="usb", ATTRS{idVendor}=="1209", ATTRS{idProduct}=="000[12]", TAG+="uaccess"

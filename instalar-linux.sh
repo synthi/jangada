@@ -6,6 +6,7 @@
 #   ./instalar-linux.sh ARQUIVO.fwsc    instala um pacote local (ex.: build/felucca.fwsc)
 #   ./instalar-linux.sh --original      volta para o firmware oficial da M-VAVE (V15)
 #   ./instalar-linux.sh --info          so mostra o que esta rodando no FM-1
+#   ./instalar-linux.sh --console       libera o console serial do FM-1 (regra udev, pede sudo)
 #   opcoes: --sim (nao pergunta)
 #
 # Precisa de: python3, um cabo USB de dados, o FM-1 ligado. Nada e gravado fora da area
@@ -28,14 +29,23 @@ for a in "$@"; do
     case "$a" in
         --original) modo=original ;;
         --info) modo=info ;;
+        --console) modo=console ;;
         --sim|-y) sim=1 ;;
-        -h|--help) sed -n '3,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+        -h|--help) sed -n '3,13p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
         -*) morra "opcao desconhecida: $a (veja --help)" ;;
         *) pacote="$a" ;;
     esac
 done
 
 [ "$(uname -s)" = Linux ] || morra "este instalador e para Linux"
+
+if [ "$modo" = console ]; then
+    diga "instalando a regra udev do console (tools/70-jangada.rules); o sudo vai pedir sua senha"
+    sudo install -m 644 "$AQUI/tools/70-jangada.rules" /etc/udev/rules.d/70-jangada.rules
+    sudo udevadm control --reload && sudo udevadm trigger --subsystem-match=tty --subsystem-match=usb
+    diga "pronto: tools/fm1_console.py status  (ou: check)"
+    exit 0
+fi
 command -v python3 >/dev/null || morra "precisa de python3"
 
 # 1. ambiente Python com mido + python-rtmidi (uma vez so)
