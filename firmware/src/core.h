@@ -130,6 +130,13 @@ typedef struct {
 enum { ST_NOTE, ST_TIE, ST_REST };
 #define SF_ACCENT 1u
 #define SF_SLIDE 2u
+/* Jangada: ratchet and chance in the free bits (7-bit safe for SysEx; bit 2 is the TIE
+ * marker of user-preset patterns, so it stays free). Old projects have 0: x1, 100 %. */
+#define SF_RATCH_SH 3u
+#define SF_RATCH (3u << SF_RATCH_SH)       /* 0..3: x1 x2 x3 x4 hits in the step */
+#define SF_CHANCE_SH 5u
+#define SF_CHANCE (3u << SF_CHANCE_SH)     /* 0..3: 100 75 50 25 % */
+#define SF_STEP (SF_ACCENT | SF_SLIDE | SF_RATCH | SF_CHANCE)
 typedef struct {                 /* acid-style step: up to 4 notes (POLY), time, accent, slide */
     uint8_t note[4];
     uint8_t n;                   /* notes in use, 0 = empty */
@@ -170,6 +177,9 @@ typedef struct track {
     uint8_t seq_hold;            /* last step slides: keep the notes until the next step */
     uint8_t slide_glide;         /* next legato note glides (slide) */
     uint32_t seq_off;
+    /* Jangada: ratchet of the playing step */
+    uint8_t rat_left, rat_idx;   /* hits still to come, the step they repeat */
+    uint32_t rat_pos, rat_sub, rat_gate;   /* samples into the sub-step, its length, its gate */
     uint8_t seq_active;          /* any step programmed */
     uint8_t rskip_idx;           /* live recording put notes into the step about to play: */
     uint8_t rskip_n, rskip[4];   /* do not trigger them again there (they sound already) */

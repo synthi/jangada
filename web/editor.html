@@ -434,7 +434,7 @@ const req = {
   stepSet: (i, st) => {
     const n = Math.max(0, Math.min(4, st.n | 0));
     const notes = [0, 1, 2, 3].map((k) => (st.notes[k] | 0) & 0x7F);
-    return [CMD.STEP_SET, [i, n, ...notes, Math.max(0, Math.min(2, st.time | 0)), st.flags & 3, (st.vel | 0) & 0x7F]];
+    return [CMD.STEP_SET, [i, n, ...notes, Math.max(0, Math.min(2, st.time | 0)), st.flags & 0x7B, (st.vel | 0) & 0x7F]];
   },
   preset: (e, p) => [CMD.PRESET, [e & 0x7F, p & 0x7F]],
   project: (op, slot) => { if (![0, 1, 2].includes(op)) throw new Error("bad PROJECT op"); return [CMD.PROJECT, [op, slot & 3]]; },   /* 0 load, 1 save, 2 query */
@@ -1317,7 +1317,7 @@ function makeMockDevice(opt = {}) {
         if (a.length < 2 || a[0] >= NTRK || a[1] >= NSTEP) return null;
         const x = st.tracks[a[0]].step[a[1]];
         if (a.length >= 10) {
-          x.n = Math.min(4, a[2]); x.notes = a.slice(3, 7); x.time = Math.min(2, a[7]); x.flags = a[8] & 3; x.vel = a[9];
+          x.n = Math.min(4, a[2]); x.notes = a.slice(3, 7); x.time = Math.min(2, a[7]); x.flags = a[8] & 0x7B; x.vel = a[9];
         }
         b(a[0]); b(a[1]); b(x.n); x.notes.forEach(b); b(x.time); b(x.flags); b(x.vel);
         break;
@@ -1334,7 +1334,7 @@ function makeMockDevice(opt = {}) {
         if (a.length < 1 || a[0] >= NSTEP) return null;
         const x = st.step[a[0]];
         if (cmd === CMD.STEP_SET && a.length >= 9) {
-          x.n = Math.min(4, a[1]); x.notes = a.slice(2, 6); x.time = Math.min(2, a[6]); x.flags = a[7] & 3; x.vel = a[8];
+          x.n = Math.min(4, a[1]); x.notes = a.slice(2, 6); x.time = Math.min(2, a[6]); x.flags = a[7] & 0x7B; x.vel = a[8];
         }
         b(a[0]); b(x.n); x.notes.forEach(b); b(x.time); b(x.flags); b(x.vel);
         break;

@@ -49,6 +49,8 @@ $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/scale_test" tests/scale_test.c -l
 run "scales: white-key mapping and note lifecycle" "$OUT/scale_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/arp_test" tests/arp_test.c -lm
 run "arp: UPDN / UDI / RPT, long divisions (Jangada)" "$OUT/arp_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/step_test" tests/step_test.c -lm
+run "steps: RTCH ratchet and CHNC chance (Jangada)" "$OUT/step_test"
 run "DSP render (ANALOG preset 0)" "$OUT/hostsim" 0 0 1 "$OUT/render.wav"
 mkdir -p build/tracks_demo
 run "TRACKS: 4-track pattern, live recording (lengths, swing), voice budget, engine switch, cost" env TRACKS=build/tracks_demo "$OUT/hostsim" 0 0 1 "$OUT/tracks.wav"

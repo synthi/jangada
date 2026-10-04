@@ -106,8 +106,8 @@ static void tracks_rec_tap(void)
 static void step_edit(uint32_t slot, int32_t steps)
 {
     step_t *st = &TSEL->step[ui.cursor];
-    uint32_t i;
-    switch (slot) {
+    uint32_t i, id = cur_page()->id[slot];
+    switch (id) {
     case 0:                                               /* STEP: the cursor */
         cursor_set(ui.cursor + steps);
         break;
@@ -125,6 +125,15 @@ static void step_edit(uint32_t slot, int32_t steps)
         break;
     case 2:
         st->time = (uint8_t)clamp((int32_t)st->time + (steps > 0 ? 1 : -1), ST_NOTE, ST_REST);
+        break;
+    case 4:                                               /* RTCH: x1..x4 (Jangada) */
+    case 5: {                                             /* CHNC: 100..25 % (Jangada) */
+        uint32_t sh = id == 4u ? SF_RATCH_SH : SF_CHANCE_SH, m = 3u << sh;
+        int32_t v = (int32_t)((st->flags & m) >> sh) + (steps > 0 ? 1 : -1);
+        st->flags = (uint8_t)((st->flags & ~m) | ((uint32_t)clamp(v, 0, 3) << sh));
+        break;
+    }
+    case 0xFF:
         break;
     default: {                                            /* FLAG: - / ACC / SLD / A+S */
         uint32_t f = (st->flags & SF_ACCENT ? 1u : 0u) | (st->flags & SF_SLIDE ? 2u : 0u);

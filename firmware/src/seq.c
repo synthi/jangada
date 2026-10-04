@@ -403,6 +403,7 @@ static void seq_stop(void)
     song.playing = 0;
     for (i = 0; i < NTRK; i++) {
         seq_release(&trk[i]);
+        trk[i].rat_left = 0;
         trk[i].rh_n = 0;                           /* a recorded note held over the stop: as far as it got */
     }
 }
@@ -418,6 +419,21 @@ static void seq_step(track_t *t, const step_t *s, uint32_t period, uint32_t skip
     uint32_t slide_in = t->seq_hold && t->seq_n;
     uint32_t len = t->p[P_SLEN] ? (uint32_t)t->p[P_SLEN] : 1u;
     uint32_t next_tie = t->step[(t->seq_idx + 1u) % len].time == ST_TIE;
+    uint32_t hits = ((s->flags & SF_RATCH) >> SF_RATCH_SH) + 1u, chance = (s->flags & SF_CHANCE) >> SF_CHANCE_SH;
+    t->rat_left = 0;
+    if (s->time == ST_NOTE && s->n && chance && (rng() & 3u) < chance) {   /* CHNC: this pass rests */
+        if (!is_drum(t))
+            seq_release(t);
+        return;
+    }
+    if (s->time == ST_NOTE && s->n && hits > 1u) {  /* RTCH: the step in equal hits, no slide out */
+        t->rat_left = (uint8_t)(hits - 1u);
+        t->rat_idx = (uint8_t)t->seq_idx;
+        t->rat_pos = 0;
+        t->rat_sub = period / hits;
+        t->rat_gate = gate = t->rat_sub * (uint32_t)t->p[P_SGATE] / 128u;
+        next_tie = 0;
+    }
     if (s->time == ST_TIE) {
         if (t->seq_n) {
             t->seq_off = gate + period / 2u;
@@ -454,7 +470,27 @@ static void seq_step(track_t *t, const step_t *s, uint32_t period, uint32_t skip
         if (!((skip >> i) & 1u))
             t->seq_notes[t->seq_n++] = s->note[i];
     t->seq_off = gate;
-    t->seq_hold = (s->flags & SF_SLIDE) != 0 || next_tie;   /* next step a TIE: keep the notes to it */
+    t->seq_hold = !t->rat_left && ((s->flags & SF_SLIDE) != 0 || next_tie);   /* next step a TIE: keep the notes to it */
+}
+
+/* RTCH: the next hit of the playing step (Jangada) */
+static void seq_ratchet(track_t *t, uint32_t n)
+{
+    const step_t *s = &t->step[t->rat_idx];
+    uint32_t i, vel = (s->flags & SF_ACCENT) ? 127u : (s->vel ? s->vel : 96u);
+    t->rat_pos += n;
+    if (t->rat_pos < t->rat_sub)
+        return;
+    t->rat_pos -= t->rat_sub;
+    t->rat_left--;
+    if (!is_drum(t)) {
+        seq_release(t);
+        for (i = 0; i < s->n; i++)
+            t->seq_notes[t->seq_n++] = s->note[i];
+        t->seq_off = t->rat_gate;
+    }
+    for (i = 0; i < s->n; i++)
+        trk_note_on(t, s->note[i], vel);
 }
 
 static void seq_tick(track_t *t, uint32_t n)
@@ -468,6 +504,8 @@ static void seq_tick(track_t *t, uint32_t n)
     }
     if (!song.playing)
         return;
+    if (t->rat_left)
+        seq_ratchet(t, n);
     t->seq_pos += n;
     for (;;) {
         uint32_t cur_len = step_samples(t, period, t->seq_idx);

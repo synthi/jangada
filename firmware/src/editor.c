@@ -336,7 +336,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
             for (i = 0; i < 4u; i++)
                 st->note[i] = a[2 + i] & 0x7Fu;
             st->time = (uint8_t)(a[6] > ST_REST ? ST_REST : a[6]);
-            st->flags = a[7] & (SF_ACCENT | SF_SLIDE);
+            st->flags = a[7] & SF_STEP;
             st->vel = a[8] & 0x7Fu;
             ui.force = 1;
         }
@@ -598,7 +598,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
             for (i = 0; i < 4u; i++)
                 st->note[i] = a[3 + i] & 0x7Fu;
             st->time = (uint8_t)(a[7] > ST_REST ? ST_REST : a[7]);
-            st->flags = a[8] & (SF_ACCENT | SF_SLIDE);
+            st->flags = a[8] & SF_STEP;
             st->vel = a[9] & 0x7Fu;
             ui.force = 1;
         }
