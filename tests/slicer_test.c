@@ -16,10 +16,7 @@
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
-#ifdef __APPLE__
-#include <libproc.h>
-#include <sys/resource.h>
-#endif
+#include "instr.h"
 
 static int check(const char *what, int ok)
 {
@@ -279,15 +276,6 @@ static int test_off_stut(void)
 }
 
 /* ------------------------------------------------------------ 5. cost --- */
-static uint64_t instr_now(void)
-{
-#ifdef __APPLE__
-    struct rusage_info_v4 ri;
-    if (!proc_pid_rusage(getpid(), RUSAGE_INFO_V4, (rusage_info_t *)&ri))
-        return ri.ri_instructions;
-#endif
-    return 0;
-}
 
 static double cost_run(int on)
 {
@@ -307,6 +295,13 @@ static double cost_run(int on)
     return i0 ? (double)(instr_now() - i0) / (2.0 * FS) : 0;
 }
 
+/* instructions a track: 60 was set on the Mac (arm64); x86-64 -O2 counts more for the same
+ * code (upstream Felucca 0.9 measures 65 there), hence its own limit */
+#if defined(__x86_64__)
+#define SLICER_COST_MAX 75
+#else
+#define SLICER_COST_MAX 60
+#endif
 static int test_cost(void)
 {
     double off = cost_run(0), on = cost_run(1);
@@ -317,7 +312,7 @@ static int test_cost(void)
     }
     snprintf(what, sizeof what, "cost: the song, 4 SLICERs on: %.0f instructions / sample (off %.0f): +%.0f, %.0f a track",
              on, off, on - off, (on - off) / 4);
-    return check(what, (on - off) / 4 < 60);
+    return check(what, (on - off) / 4 < SLICER_COST_MAX);
 }
 
 /* ------------------------------------------------------------ demos --- */

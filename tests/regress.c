@@ -26,10 +26,7 @@
 #define main hostsim_main
 #include "hostsim.c"
 #undef main
-#ifdef __APPLE__
-#include <libproc.h>
-#include <sys/resource.h>
-#endif
+#include "instr.h"
 
 /* ------------------------------------------------------------- limits --- */
 #define LIM_NEAR 30000            /* |sample| at or above: "near full scale" (the limiter holds ~18000) */
@@ -306,15 +303,6 @@ static void job_song(const job_t *j)
 
 /* CPU: parts[k] = {engine, preset, notes} (POLY, SUS 127, no ARP; SLICE: MODE LOOP), drums on 16ths if parts[3][0];
  * 0.5 s to settle, then 1 s counted */
-static uint64_t instr_now(void)
-{
-#ifdef __APPLE__
-    struct rusage_info_v4 ri;
-    if (!proc_pid_rusage(getpid(), RUSAGE_INFO_V4, (rusage_info_t *)&ri))
-        return ri.ri_instructions;
-#endif
-    return 0;
-}
 static void job_cpu(const job_t *j)
 {
     static const uint8_t NOTES[8] = {48, 52, 55, 59, 60, 64, 67, 71};
@@ -983,7 +971,7 @@ int main(int argc, char **argv)
             return 2;
         }
         fprintf(f, "# FELUCCA host CPU baseline (tests/regress.c): instructions per 44.1 kHz sample, cc -O2 on\n"
-                   "# the Mac (kernel-counted, ~1 %% run to run). The check allows +%.0f %%. Rewritten by BUDGET_UPDATE=1.\n",
+                   "# this host (kernel-counted: proc_pid_rusage on the Mac, perf_event_open on Linux; ~1 %% run to run). The check allows +%.0f %%. Rewritten by BUDGET_UPDATE=1.\n",
                 CPU_TOL * 100);
         for (i = c0; i < c1; i++)
             fprintf(f, "%s %.0f\n", J[i].name, J[i].r.ipc);
