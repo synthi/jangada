@@ -123,14 +123,28 @@ static inline int32_t sample_next(const smp_zone_t *z, voice_t *v, int loop)
     return v->s[0];
 }
 
+/* the zone of a set that plays a note: the narrowest one that holds it (a one-note
+ * zone wins over a range around it: GM 42 / 44 / 49 inside the tom ranges), the
+ * later one on a tie; 0xFFFF = none */
+static uint32_t smp_zone_pick(const smp_set_t *set, uint32_t note)
+{
+    uint32_t i, zi = 0xFFFFu, best = 0xFFFFu;
+    for (i = 0; i < set->nz; i++) {
+        const smp_zone_t *z = &SMP_ZONES[set->z0 + i];
+        if (note >= z->lo && note <= z->hi && (uint32_t)(z->hi - z->lo) <= best) {
+            best = (uint32_t)(z->hi - z->lo);
+            zi = set->z0 + i;
+        }
+    }
+    return zi;
+}
+
 static void sample_note_on(track_t *t, voice_t *v)
 {
     uint32_t si = (uint32_t)t->p[P_E0] % SMP_NALL, i, zi = 0xFFFFu;
     if (si < SMP_NSETS) {
         const smp_set_t *set = &SMP_SETS[si];
-        for (i = 0; i < set->nz; i++)
-            if (v->note >= SMP_ZONES[set->z0 + i].lo && v->note <= SMP_ZONES[set->z0 + i].hi)
-                zi = set->z0 + i;
+        zi = smp_zone_pick(set, v->note);
         v->s[4] = (int32_t)(zi == 0xFFFFu ? set->z0 : zi);
     } else {                                        /* user slot: silent if empty */
         uint32_t k = si - SMP_NSETS;

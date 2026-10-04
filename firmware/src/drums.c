@@ -37,9 +37,7 @@ static void drum_on(uint32_t note, uint32_t vel)
     if (si < 0)
         return;
     set = &SMP_SETS[si];
-    for (i = 0; i < set->nz; i++)
-        if (note >= SMP_ZONES[set->z0 + i].lo && note <= SMP_ZONES[set->z0 + i].hi)
-            zi = set->z0 + i;
+    zi = smp_zone_pick(set, note);
     if (zi == 0xFFFFu)
         return;
     if (note == 42u || note == 44u)                 /* hi-hat choke */

@@ -54,7 +54,7 @@ preset/GRAIN/00_CLOUD_PAD 0f529c71a15d8050
 preset/GRAIN/01_GLITCH 457407330424e8e4
 preset/GRAIN/02_FROZEN b79ad8cff0eb868c
 preset/GRAIN/03_SHIMMER 163a1644ed49561c
-drums/gm_kit bb887512f8690380
+drums/gm_kit 367e53bddea4dd14
 mode/ANALOG/POLY 37fb068bc75b2f5c
 mode/ANALOG/MONO 4904e99e3020a8b0
 mode/ANALOG/LEGATO 8fff1c8dc8b7ded8
@@ -79,7 +79,7 @@ sends/DIGITAL/delay 71a02347af3c436c
 sends/DIGITAL/reverb fb4c93f7a4006028
 sends/DIGITAL/all 6a157efab1c5d448
 sends/DIGITAL/dist f363b9bd19dbf934
-song/4track_mix 74767d955d42eb0c
+song/4track_mix 69274f3b5426ab40
 slicer/gate/ANALOG_ACID 07581a19222c2474
 slicer/stut/DIGITAL_PAD 79fc690f0549c674
-slicer/song_gate_stut a978deee7b9fefb8
+slicer/song_gate_stut 501e3997a7db5fdc
