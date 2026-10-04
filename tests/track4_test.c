@@ -62,6 +62,7 @@ static void t4_set(uint32_t synth)
     track_t *t = TDRUM;
     uint32_t i;
     song.g[G_T4] = (int16_t)synth;
+    song.t4 = (uint8_t)synth;                       /* t4_follow applies the request atomically */
     for (i = 0; i < NVOICE; i++)
         t->v[i].active = t->v[i].gate = 0;
     t->nheld = t->arp_phys = t->arp_note = t->arp_nch = t->seq_n = t->rat_left = 0;

@@ -833,7 +833,7 @@ function remapParams(p, fromKeys, toKeys) {
 }
 
 /* one pattern step as the firmware keeps it (up_pat_norm): a tie has no note, a rest no flags */
-const patNorm = (n, f) => (f & 4 ? [0, 4] : [n & 0x7F, n ? f & 3 : 0]);
+const patNorm = (n, f) => (f & 4 ? [0, 4] : [n & 0x7F, n ? f & 0x7B : 0]);   /* Jangada: RTCH / CHNC kept */
 /* sequencer steps (STEP_GET objects) -> 16-step pattern, as the firmware's UP_STORE does (up_pat_from):
    the first note of a NOTE step, flag 4 for a TIE step */
 function patternFromSteps(steps) {
@@ -847,7 +847,7 @@ function patternFromSteps(steps) {
 function stepsFromPattern(pat) {
   return Array.from({ length: UP.PAT }, (_, i) => {
     const [n, f] = (pat && pat[i]) || [0, 0];
-    return { n: n ? 1 : 0, notes: [n & 0x7F, 0, 0, 0], time: f & 4 ? 1 : n ? 0 : 2, flags: n ? f & 3 : 0, vel: n ? 96 : 0 };
+    return { n: n ? 1 : 0, notes: [n & 0x7F, 0, 0, 0], time: f & 4 ? 1 : n ? 0 : 2, flags: n ? f & 0x7B : 0, vel: n ? 96 : 0 };
   });
 }
 const patternUsed = (pat) => !!pat && pat.some((x) => x && x[0]);

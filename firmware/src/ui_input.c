@@ -198,6 +198,8 @@ static void edit_param(uint32_t slot, int32_t steps)
         return;
     v = clamp(*vp + accel(EN_K1 + slot, steps, d->max - d->min), d->min, d->max);
     *vp = (int16_t)v;
+    if (pg->scope == SC_TRACK && (id == P_VOICE || id == P_ALLOC))
+        panic_req |= (uint8_t)(1u << song.sel);           /* Jangada: as a preset change: a POLY note on v[0] hung */
     if (!v)
         return;
     if (pg->scope == SC_GLOBAL && (id == G_LOAD || id == G_SAVE || id == G_CLRSEQ || id == G_INITSND) &&
@@ -295,6 +297,8 @@ static void ui_input(void)
     uint32_t arp = btn_hold(&ui.arp_t0, B_ARP, now, !ui.menu);
     int32_t s;
     t4_follow();
+    if (arp == BT_TAP && !ui.menu && !ui.confirm)       /* Jangada: ARP acts on release, as HOME: a tap */
+        open_family(FAM_ARP);                           /* opens its page, a hold (below) does not */
     if (arp == BT_HOLD) {                               /* Jangada: ARP held: every latched (HOLD) chord off */
         uint32_t i, any = 0;
         for (i = 0; i < NTRK; i++)
@@ -376,6 +380,7 @@ static void ui_input(void)
             transport_req = song.playing ? 2 : 1;
             break;
         case B_REC:                                     /* tap / hold: above */
+        case B_ARP:                                     /* Jangada: tap / hold, above */
             break;
         case B_OCTDN:
         case B_OCTUP: {

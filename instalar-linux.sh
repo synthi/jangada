@@ -80,18 +80,25 @@ if [ "$modo" = original ]; then
     pacote="$DADOS/FM-1_V15_oficial.fwsc"
     if [ ! -f "$pacote" ]; then
         diga "baixando o firmware oficial da M-VAVE (V15)"
-        curl -fsSL -o "$pacote.tmp" "$ORIGINAL_URL" && mv "$pacote.tmp" "$pacote"
+        curl -fsSL -o "$pacote.tmp" "$ORIGINAL_URL" || { rm -f "$pacote.tmp"; morra "nao consegui baixar o firmware oficial (internet?)"; }
+        mv "$pacote.tmp" "$pacote"
     fi
     echo "$ORIGINAL_SHA  $pacote" | sha256sum -c --quiet - || { rm -f "$pacote"; morra "o arquivo oficial nao confere (sha256)"; }
     extra=(--force)          # o pacote oficial nao tem a marca do loader da Jangada/Felucca
 elif [ -z "$pacote" ]; then
     command -v curl >/dev/null || morra "precisa de curl"
     diga "procurando a ultima versao da Jangada"
-    url="$(curl -fsSL "https://api.github.com/repos/$REPO/releases" \
-           | grep -oE '"browser_download_url": *"[^"]+\.fwsc"' | head -1 | sed -E 's/.*"(http[^"]+)"/\1/')" || true
-    [ -n "$url" ] || morra "nenhuma versao publicada ainda. Passe um arquivo: ./instalar-linux.sh build/felucca.fwsc"
+    achar() { grep -oE '"browser_download_url": *"[^"]+\.fwsc"' | head -1 | sed -E 's/.*"(http[^"]+)"/\1/'; }
+    # a versao estavel mais nova; sem nenhuma, a pre-versao mais nova
+    url="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" 2>/dev/null | achar)" || true
+    [ -n "$url" ] || url="$(curl -fsSL "https://api.github.com/repos/$REPO/releases" | achar)" || true
+    [ -n "$url" ] || morra "nenhuma versao publicada (ou sem internet). Passe um arquivo: ./instalar-linux.sh build/felucca.fwsc"
     pacote="$DADOS/$(basename "$url")"
-    curl -fsSL -o "$pacote" "$url"
+    curl -fsSL -o "$pacote.tmp" "$url" || { rm -f "$pacote.tmp"; morra "nao consegui baixar $url"; }
+    if sha="$(curl -fsSL "$url.sha256" 2>/dev/null)" && [ -n "$sha" ]; then
+        [ "${sha%% *}" = "$(sha256sum "$pacote.tmp" | cut -d' ' -f1)" ] || { rm -f "$pacote.tmp"; morra "o arquivo baixado nao confere com o .sha256 da versao"; }
+    fi
+    mv "$pacote.tmp" "$pacote"
 fi
 [ -f "$pacote" ] || morra "arquivo nao encontrado: $pacote"
 

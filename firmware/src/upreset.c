@@ -52,6 +52,7 @@ typedef struct {
 } up_bank_v1_t;
 _Static_assert(sizeof(up_rec_v1_t) == 192 && sizeof(up_bank_v1_t) == 3080, "Felucca's user preset bank");
 static up_bank_t up_bank[UP_SLOTS / UP_PER_BANK];
+static uint8_t up_foreign[UP_SLOTS / UP_PER_BANK];   /* Jangada: stored, but not readable here: kept, not overwritten */
 
 static up_rec_t *up_rec(uint32_t k) { return &up_bank[k / UP_PER_BANK].r[k % UP_PER_BANK]; }
 
@@ -102,6 +103,7 @@ static void up_from_v1(up_rec_t *d, const up_rec_v1_t *s)
 
 /* after loading bank b (len bytes, -1 = none): a Felucca bank is converted, a bank with other
  * keys is mapped to today's P_* order, any other shape -> empty */
+static void up_pat_norm(uint8_t *note, uint8_t *flags);
 static void up_bank_check(uint32_t b, int len)
 {
     up_bank_t *bk = &up_bank[b];
@@ -111,15 +113,27 @@ static void up_bank_check(uint32_t b, int len)
         v1->nslot == UP_PER_BANK) {
         /* in place, last record first: record i moves up (8 + 192 i -> 100 + 224 i), never onto
          * a record not yet converted */
-        for (i = UP_PER_BANK; i-- > 0;)
+        for (i = UP_PER_BANK; i-- > 0;) {
+            uint32_t k;
             up_from_v1(&bk->r[i], &v1->r[i]);
+            for (k = 0; k < 16u; k++)
+                up_pat_norm(&bk->r[i].note[k], &bk->r[i].flags[k]);
+        }
+        up_foreign[b] = 0;
         up_bank_fresh(bk);
         return;
     }
     if (len != (int)sizeof *bk || bk->magic != UP_BANK_MAGIC || bk->rsize != sizeof(up_rec_t) ||
         bk->nslot != UP_PER_BANK || !bk->np || bk->np > UP_PMAX) {
+        up_foreign[b] = len > 0;                     /* (another build's bank: a save would wipe its 16) */
         memset(bk, 0, sizeof *bk);
         return;
+    }
+    up_foreign[b] = 0;
+    for (i = 0; i < UP_PER_BANK; i++) {              /* the patterns as the parser leaves them */
+        uint32_t k;
+        for (k = 0; k < 16u; k++)
+            up_pat_norm(&bk->r[i].note[k], &bk->r[i].flags[k]);
     }
     {   /* stored with other keys (another version): to today's order */
         uint8_t key[UP_PMAX];
@@ -177,7 +191,7 @@ static void up_pat_norm(uint8_t *note, uint8_t *flags)   /* tie: no note; rest: 
         *note = 0;
         *flags = 4;
     } else {
-        *flags = *note ? (uint8_t)(*flags & (SF_ACCENT | SF_SLIDE)) : 0u;
+        *flags = *note ? (uint8_t)(*flags & SF_STEP) : 0u;   /* Jangada: RTCH / CHNC kept */
     }
 }
 
@@ -261,6 +275,8 @@ static void up_boot(void)                      /* persist_boot: the banks from f
 static int up_put(uint32_t k, const up_rec_t *r)
 {
     up_bank_t *bk = &up_bank[k / UP_PER_BANK];
+    if (up_foreign[k / UP_PER_BANK])
+        return 2;                                    /* Jangada: not over a bank this build cannot read */
     up_bank_fresh(bk);
     if (r)
         *up_rec(k) = *r;

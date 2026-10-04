@@ -156,7 +156,11 @@ static uint32_t ota_take(void)
 /* main loop, outside a session: answer handshakes */
 static void ota_service(void)
 {
-    uint32_t d = ota_take();
+    const uint8_t *p;
+    uint32_t n, d;
+    if (ota_frame_get(&p, &n) && n >= 3u && p[0] == 0x7Du && p[1] == 0x46u && p[2] == 0x4Cu)
+        return;                                  /* Jangada: an editor request: ed_service's, not ours */
+    d = ota_take();
     if (d == 7u && ota_dec[2] == 0x11)
         ota_reply_identity();
 }

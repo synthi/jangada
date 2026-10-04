@@ -107,7 +107,7 @@ typedef struct {
     uint8_t fx[4];               /* DIST, CHORUS, DELAY, REVERB sends */
     uint8_t arp[4];              /* MODE, RATE, OCT, GATE */
     uint8_t pat;                 /* sequence pattern (PATTERNS[pat - 1]), loaded only into an empty sequencer */
-    int8_t x[NEDIT - 8];         /* Jangada: P_E8.. stored + 1, 0 = the engine's default; last, so the
+    int16_t x[NEDIT - 8];        /* Jangada: P_E8.. stored + 1, 0 = the engine's default; last, so the
                                   * positional initializers above stay as they are (.x = {..}) */
     const int16_t (*set)[2];     /* Jangada: any other parameters, {P_*, value} .. {-1}: SET(..) */
 } preset_t;
@@ -228,6 +228,8 @@ typedef struct {
     uint32_t tick;               /* sub-blocks since play */
     uint32_t cpu_q8;             /* audio ISR load, 1/256 */
     uint32_t master_q12;
+    uint8_t t4;                  /* Jangada: track 4 a synth (1), as the audio ISR sees it: G_T4 is the request,
+                                  * ui.c t4_follow / project_load apply it atomically, the track ready */
     int32_t batt_raw;            /* smoothed ADC ch3 (battery divider), 0 = not read yet */
 } song_t;
 
@@ -235,9 +237,9 @@ static track_t trk[NTRK];        /* the instrument: three parts and the drum tra
 static song_t song;
 #define TSEL (&trk[song.sel])    /* the selected track */
 #define TDRUM (&trk[TRK_DRUM])
-static int is_drum(const track_t *t) { return t == TDRUM && !song.g[G_T4]; }
+static int is_drum(const track_t *t) { return t == TDRUM && !song.t4; }
 /* Jangada: track i plays an engine (tracks 1..3 always, track 4 when GLO > DRUMS T4 is SYNTH) */
-static int trk_synth(uint32_t i) { return i < NPART || (i == TRK_DRUM && song.g[G_T4]); }
+static int trk_synth(uint32_t i) { return i < NPART || (i == TRK_DRUM && song.t4); }
 #define RING_PUBLISH() __asm__ volatile("" ::: "memory")   /* slot store before the index update */
 static volatile uint32_t fm1_ms;  /* milliseconds since boot (TIMER4-based, TIMER5 ISR in main.c) */
 /* boot-loop guard (main.c): two boots in a row that die in the first 30 s -> UBOOT */

@@ -165,9 +165,13 @@ static void arp_tick(track_t *t, uint32_t n)
         return;
     }
     t->arp_pos += n;
-    if (t->arp_pos < period + (uint32_t)((t->arp_idx & 1u) ? sw : -sw) && t->arp_pos != 0xFFFFFFF + n)
-        return;
-    t->arp_pos = 0;
+    {
+        uint32_t len = period + (uint32_t)((t->arp_idx & 1u) ? sw : -sw);
+        if (t->arp_pos < len && t->arp_pos != 0xFFFFFFF + n)
+            return;
+        /* the remainder carries on, as seq_tick does (setting 0 drifted: each step rounded up to a block) */
+        t->arp_pos = t->arp_pos == 0xFFFFFFF + n || t->arp_pos - len >= len ? 0 : t->arp_pos - len;
+    }
     /* build the note list: held notes (sorted or as played) over OCT octaves */
     for (i = 0; i < t->nheld; i++)
         list[i] = t->held[i];
@@ -432,7 +436,7 @@ static void seq_step(track_t *t, const step_t *s, uint32_t period, uint32_t skip
         t->rat_left = (uint8_t)(hits - 1u);
         t->rat_idx = (uint8_t)t->seq_idx;
         t->rat_pos = 0;
-        t->rat_sub = period / hits;
+        t->rat_sub = step_samples(t, period, t->seq_idx) / hits;   /* the swung length of this step */
         t->rat_gate = gate = t->rat_sub * (uint32_t)t->p[P_SGATE] / 128u;
         next_tie = 0;
     }
@@ -610,8 +614,13 @@ static void events_block(uint32_t n)
     }
     keyboard_block();
     while (mi_r != mi_w) {                            /* USB-MIDI (and TRS) in */
-        uint32_t pkt = midi_in_q[mi_r % MQ], st = (pkt >> 8) & 0xF0u, ch = (pkt >> 8) & 0x0Fu;
-        uint32_t d1 = (pkt >> 16) & 0x7Fu, d2 = (pkt >> 24) & 0x7Fu;
+        uint32_t pkt, st, ch, d1, d2;
+        RING_PUBLISH();                               /* Jangada: the slot after the index, as ep1_tx */
+        pkt = midi_in_q[mi_r % MQ];
+        st = (pkt >> 8) & 0xF0u;
+        ch = (pkt >> 8) & 0x0Fu;
+        d1 = (pkt >> 16) & 0x7Fu;
+        d2 = (pkt >> 24) & 0x7Fu;
         mi_r++;
         if (st == 0x90u && d2)
             input_on(midi_route(ch, d1, 1), d1, d2);

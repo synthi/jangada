@@ -213,7 +213,7 @@ static void voice_start(track_t *t, voice_t *v, uint32_t note, uint32_t vel, int
     const engine_t *e = ENGINES[t->engine];
     int sounding = v->active && v->stage != 0;
     uint32_t ph0 = v->ph[0], ph1 = v->ph[1], ph2 = v->ph[2];
-    int32_t s0 = v->s[0], s1 = v->s[1], s4 = v->s[4], s5 = v->s[5], s6 = v->s[6], s7 = v->s[7];
+    int32_t s0 = v->s[0], s1 = v->s[1], s3 = v->s[3], s4 = v->s[4], s5 = v->s[5], s6 = v->s[6], s7 = v->s[7];
     v->note = (uint8_t)note;
     v->vel = (uint8_t)vel;
     v->gate = 1;
@@ -235,6 +235,9 @@ static void voice_start(track_t *t, voice_t *v, uint32_t note, uint32_t vel, int
         if (e == &ENG_ANALOG) {
             v->s[0] = s0;
             v->s[1] = s1;
+            v->s[3] = s3;                               /* Jangada: the LP24 stage and the drift too */
+            v->s[4] = s4;
+            v->s[6] = s6;
         } else if (e == &ENG_DIGITAL) {
             v->s[5] = s5;
             v->s[6] = s6;
@@ -540,6 +543,8 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
                 m.cutoff += (m.envq15 * 24) >> 7;
             m.shape = (64 << 8) + ((lfo * p[P_LD_SHP]) >> 7) + ((m.envq15 * p[P_ED_SHP]) >> 7) + md[2];
             m.cutoff += md[0];
+            m.shape = clamp(m.shape, 0, 127 << 8);      /* Jangada: stacked LFO + ENV + matrix stay in range */
+            m.cutoff = clamp(m.cutoff, -(127 << 8), 127 << 8);
             e->render(t, v, out, n, &m);
             if (moved)
                 mod_restore(t, moved, keep);

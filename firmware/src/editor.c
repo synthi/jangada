@@ -247,6 +247,8 @@ static const param_desc_t *ed_tdesc(const track_t *t, uint32_t id)   /* the stat
 {                                                                     /* desc hook is the device display only */
     if (id >= P_E0 && id < P_E0 + NEDIT)
         return &ENGINES[t->eng_req % NENGINES]->edit[id - P_E0];
+    if (id == P_M1DST || id == P_M2DST || id == P_M3DST || id == P_M4DST)
+        return mod_dst_desc(ENGINES[t->eng_req % NENGINES]);   /* Jangada: as the device shows them */
     return &TP[id];
 }
 /* descriptor and value slot of (scope, id): scope 0 = the selected track, 1 = global */
@@ -417,7 +419,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         if (na < 2u || a[0] >= SMP_USER_SLOTS || !flash_ok)
             return;
         ed_b(a[0]);
-        ed_b((uint32_t)ed_smp_end(a[0], a + 1, na - 1u));
+        ed_b(usr_nz[a[0]] ? 4u : (uint32_t)ed_smp_end(a[0], a + 1, na - 1u));   /* Jangada: SMP_BEGIN first, as WRITE */
         break;
     case ED_SMP_INFO:                                      /* -> per slot: zones (0 = empty), name, data KiB */
         ed_b(SMP_USER_SLOTS);

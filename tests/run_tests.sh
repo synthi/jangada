@@ -59,6 +59,8 @@ $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/mod_test" tests/mod_test.c -lm
 run "mod: the modulation matrix (Jangada)" "$OUT/mod_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/track4_test" tests/track4_test.c -lm
 run "track 4: DRUM / SYNTH (Jangada)" "$OUT/track4_test"
+$CC -O2 -o "$OUT/enc_test" tests/enc_test.c
+run "encoders: detents learned from evidence (Felucca #23)" "$OUT/enc_test"
 run "DSP render (ANALOG preset 0)" "$OUT/hostsim" 0 0 1 "$OUT/render.wav"
 mkdir -p build/tracks_demo
 run "TRACKS: 4-track pattern, live recording (lengths, swing), voice budget, engine switch, cost" env TRACKS=build/tracks_demo "$OUT/hostsim" 0 0 1 "$OUT/tracks.wav"

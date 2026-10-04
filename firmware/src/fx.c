@@ -206,8 +206,8 @@ static void mix_part(track_t *t, uint32_t n)
                 send_d[i] += mulq15(xs, d);
             if (r)
                 send_r[i] += mulq15(xs, r);
-            mix_l[i] += (x * gl) >> 12;
-            mix_r[i] += (x * gr) >> 12;
+            mix_l[i] += (int32_t)(((int64_t)x * gl) >> 12);   /* 64-bit: x * 4096 overflowed for loud parts */
+            mix_r[i] += (int32_t)(((int64_t)x * gr) >> 12);
         }
         t->peak = pk;
     }

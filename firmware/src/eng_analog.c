@@ -25,6 +25,14 @@ static void analog_note_on(track_t *t, voice_t *v)
         v->s[2] = 0x1234567 + (int32_t)v->age;        /* noise state */
 }
 
+static uint32_t voices_busy(void);                   /* voice.c */
+static uint8_t analog_nv;                            /* voices sounding, all parts (analog_block) */
+static void analog_block(track_t *t)
+{
+    (void)t;
+    analog_nv = (uint8_t)voices_busy();
+}
+
 static inline int32_t analog_osc(uint32_t wave, uint32_t ph, uint32_t inc, uint32_t pw)
 {
     switch (wave) {
@@ -58,18 +66,13 @@ __attribute__((noinline)) static void analog_render_x(track_t *t, voice_t *v, in
     uint32_t pw = 0x80000000u + (uint32_t)((m->shape - (64 << 8)) << 15);
     int32_t m2 = mix * 258, m1 = 32767 - m2, nz = noise * 200, drv = p[P_E6];
     int32_t cg;
-    {   /* the CPU: fewer copies when many voices sound (all parts share NVOICE): 7 oscillators a
-         * voice up to 4 voices, 5 up to 6, 3 above (8 voices of 7 measured 73 % on the FM-1 and lost
-         * voices to the shedder; capped: SUPER SAW x 8 voices 62 %) */
-        uint32_t q, j, nv = 0;
-        for (q = 0; q < NPART; q++)
-            for (j = 0; j < NVOICE; j++)
-                nv += trk[q].v[j].active;
-        if (ncopy > 4u && nv > 4u)
-            ncopy = 4;
-        if (ncopy > 2u && nv > 6u)
-            ncopy = 2;
-    }
+    /* the CPU: fewer copies when many voices sound (all parts share NVOICE): 7 oscillators a voice
+     * up to 4 voices, 5 up to 6, 3 above (8 voices of 7 measured 73 % on the FM-1 and lost voices
+     * to the shedder; capped: SUPER SAW x 8 voices 55 %). analog_nv: analog_block, once a block */
+    if (ncopy > 4u && analog_nv > 4u)
+        ncopy = 4;
+    if (ncopy > 2u && analog_nv > 6u)
+        ncopy = 2;
     cg = 32767 * 10 / (10 + 6 * (int32_t)ncopy);     /* main + copies at 0.6: about the same level */
     int32_t sg = sub * 200;
     uint32_t ph0 = v->ph[0], ph1 = v->ph[1], spr = v->ph[2], sph = (uint32_t)v->s[5];
@@ -97,8 +100,8 @@ __attribute__((noinline)) static void analog_render_x(track_t *t, voice_t *v, in
         if (ncopy) {
             int32_t sum = 0;
             for (k = 0; k < ncopy; k++)
-                sum += analog_osc(wave, ph0 + (uint32_t)(COPY_AT[k] * (int32_t)spr) + COPY_PH[k],
-                                  inc1 + (uint32_t)(COPY_AT[k] * (int32_t)dinc), pw);
+                sum += analog_osc(wave, ph0 + (uint32_t)(int32_t)COPY_AT[k] * spr + COPY_PH[k],
+                                  inc1 + (uint32_t)(int32_t)COPY_AT[k] * dinc, pw);
             sum = ((sum >> 2) * 19661) >> 13;         /* copies at 0.6 (|sum| < 2^18: no overflow) */
             a = mulq15(a, cg) + (((sum >> 2) * cg) >> 13);
         }
@@ -116,7 +119,8 @@ __attribute__((noinline)) static void analog_render_x(track_t *t, voice_t *v, in
             s = softclip(((s >> 2) * (drive >> 2)) >> 11);
         y = tsvf_lpbp(&flt, s >> 1, &ic1, &ic2, &bp);
         if (ftyp == 1)
-            y = tsvf_lp(&flt, y, &jc1, &jc2);         /* LP24: the low-pass again */
+            y = tsvf_lp(&flt, clamp(y, -100000, 100000), &jc1, &jc2);   /* LP24: the low-pass again
+                                                                          * (input bounded: no overflow at CUT/RES 127) */
         else if (ftyp == 2)
             y = bp;
         else if (ftyp == 3)
@@ -268,4 +272,5 @@ static const engine_t ENG_ANALOG = {
     },
     ANALOG_PRESETS, sizeof(ANALOG_PRESETS) / sizeof(ANALOG_PRESETS[0]), 1, analog_note_on, analog_render,
     0xF986, {P_E4, P_E5, P_ATK, P_REL},
+    .block = analog_block,                           /* Jangada: the superwave's voice count */
 };

@@ -32,6 +32,7 @@ typedef struct {                               /* one track; the drum track igno
 } proj_trk_t;
 typedef struct {
     uint32_t magic, size;
+    uint32_t layout;                           /* Jangada: proj_layout() of the build that wrote it */
     int16_t g[G_COUNT];
     uint8_t sel, rsv[3];                       /* the selected track */
     proj_trk_t t[NTRK];
@@ -80,7 +81,18 @@ static uint32_t proj_hash(const void *p, uint32_t n)   /* FNV-1a over n bytes */
     return s;
 }
 static uint32_t proj_sum(const project_t *p) { return proj_hash(p, sizeof *p - 4u); }
-static int proj_ok(const project_t *q) { return q->magic == PROJ_MAGIC && q->size == sizeof *q && q->sum == proj_sum(q); }
+/* Jangada: a RAM slot survives a firmware update (.noinit): one written by a build with another
+ * parameter layout must not be read as this one's (it would be the same size if parameters only
+ * moved); then the keyed copy in flash is used */
+static uint32_t proj_layout(void)
+{
+    uint32_t v[4] = {G_COUNT, NENGINES, sizeof(step_t), NSTEP};
+    return proj_hash(P_KEY, sizeof P_KEY) ^ proj_hash(v, sizeof v);
+}
+static int proj_ok(const project_t *q)
+{
+    return q->magic == PROJ_MAGIC && q->size == sizeof *q && q->layout == proj_layout() && q->sum == proj_sum(q);
+}
 
 /* the globals of formats 1 and 2 (G_* unchanged since; any added later: their defaults) */
 static void proj_g_from_v2(int16_t *g, const int16_t *g2)
@@ -154,7 +166,7 @@ static void proj_fill(project_t *q)
 {
     uint32_t i, k;
     for (i = 0; i < NTRK; i++) {
-        uint32_t e = i <= TRK_DRUM ? q->t[i].engine % NENGINES : 0u;
+        uint32_t e = q->t[i].engine % NENGINES;     /* (the drum track's byte is 0 unless T4 was SYNTH) */
         for (k = 0; k < P_COUNT; k++)
             if (q->t[i].p[k] == PROJ_DEF)
                 q->t[i].p[k] = k >= P_E0 && k < P_E0 + NEDIT ? ENGINES[e]->edit[k - P_E0].def : TP[k].def;
@@ -267,6 +279,7 @@ static int proj_import(project_t *q, const void *b, int n)
         !proj_from_v2(q, (const project_v2_t *)b, n) && !proj_from_v1(q, (const project_v1_t *)b, n))
         return 0;
     proj_fill(q);
+    q->layout = proj_layout();
     q->sum = proj_sum(q);
     return 1;
 }
@@ -295,6 +308,8 @@ static void project_save(uint32_t slot)
     memset(p, 0, sizeof *p);
     p->magic = PROJ_MAGIC;
     p->size = sizeof *p;
+    p->layout = proj_layout();
+    fm1_irq_off();                                     /* Jangada: live recording writes steps in the ISR */
     for (i = 0; i < G_COUNT; i++)
         p->g[i] = song.g[i];
     p->sel = song.sel;
@@ -304,6 +319,7 @@ static void project_save(uint32_t slot)
         p->t[i].preset = trk[i].preset;
         memcpy(p->t[i].step, trk[i].step, sizeof trk[i].step);
     }
+    fm1_irq_on();
     p->sum = proj_sum(p);
 #if FELUCCA_FLASH
     if (flash_ok) {
@@ -333,6 +349,10 @@ static void project_load(uint32_t slot)
     for (i = 0; i < G_COUNT; i++)
         if (i != G_SLOT && i != G_LOAD && i != G_SAVE)
             song.g[i] = (int16_t)clamp(p->g[i], GP[i].min, GP[i].max);
+    if (song.t4 != (song.g[G_T4] != 0)) {               /* Jangada: the project's track 4 type, before */
+        t4_reset(TDRUM);                                /* the tracks below are read with it */
+        song.t4 = (uint8_t)(song.g[G_T4] != 0);
+    }
     for (k = 0; k < NTRK; k++) {
         track_t *t = &trk[k];
         const proj_trk_t *s = &p->t[k];
@@ -354,10 +374,11 @@ static void project_load(uint32_t slot)
                 st->time = ST_REST;
             for (j = 0; j < 4u; j++)
                 st->note[j] &= 127u;
+            st->vel &= 127u;                            /* Jangada: > 127 overflowed the voice amplitude */
+            st->flags &= SF_STEP;
         }
     }
     song.sel = (uint8_t)(p->sel < NTRK ? p->sel : 0u);
-    ui.t4 = (uint8_t)song.g[G_T4];                     /* Jangada: the project's track 4, as stored */
     fm1_irq_on();
     for (k = 0; k < NPART; k++)                         /* a format 1 project: the default sounds of tracks 2, 3 */
         if (p->t[k].preset == 0xFFu) {

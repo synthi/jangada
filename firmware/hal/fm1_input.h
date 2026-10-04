@@ -19,8 +19,8 @@
  * FM1_INPUT_IDLE() while it waits.
  * Keys/buttons: integrating debounce of FM1_DEBOUNCE frames.
  * Encoders: quadrature decoder (2-sample filter, + = clockwise) with detent
- * counting: states an encoder rests in for >= FM1_REST_FRAMES are learned, and
- * a step is emitted only on reaching a rest state after >= 2 net transitions.
+ * learning (fm1_enc.h, Jangada: rests counted as evidence, see there); a step
+ * is emitted only on reaching a rest state after >= 2 net transitions.
  * One click = one step at any speed, whether a detent is a half or a full
  * quadrature cycle. fm1_enc_take() returns the steps.
  * LEDs: set fm1_led[col] (packed row bits, bit1 PA5..bit4 PA8); they are lit
@@ -30,6 +30,7 @@
 #include <stdint.h>
 #include "fm1_time.h"
 #include "fm1_gpio.h"
+#include "fm1_enc.h"
 
 #ifndef FM1_INPUT_IDLE
 #define FM1_INPUT_IDLE() ((void)0)
@@ -39,7 +40,6 @@
 #endif
 #define FM1_DEBOUNCE 8u           /* frames (~0.6 ms each) */
 #define FM1_SETTLE_US 10u
-#define FM1_REST_FRAMES 40u       /* ~25 ms still = a detent position */
 #define FM1_NCOL 11u
 #define FM1_NKEY 41u              /* ids: 0..13 buttons, 14..40 note keys */
 #define FM1_NENC 7u
@@ -70,14 +70,11 @@ static volatile struct {
     uint32_t notes_pressed;      /* note-key press edges since the last fm1_input_note_edges() */
     uint8_t raw[FM1_NCOL];       /* last frame, packed rows, 1 = closed */
     uint8_t cnt[FM1_NKEY];
-    uint8_t enc_prev[FM1_NENC], enc_last[FM1_NENC];
-    uint8_t enc_rest[FM1_NENC];  /* learned rest (detent) states, bit per state */
-    uint8_t enc_still[FM1_NENC]; /* frames since the last state change */
-    int8_t enc_sub[FM1_NENC];    /* net transitions since the last rest state */
     int16_t enc_steps[FM1_NENC]; /* + = clockwise */
     uint32_t frames;
 } fm1_in;
 static uint8_t fm1_led[FM1_NCOL];
+static fm1_enc_t fm1__enc[FM1_NENC];  /* the decoders (scan ISR only) */
 
 static void fm1__led_lines(uint32_t rowmask)
 {
@@ -147,7 +144,7 @@ static void fm1_input_init(void)
     FM1_PR(FM1_PA, FM1_DIR) &= ~sr;
     fm1__sr_word(0xFFFFu);
     for (i = 0; i < FM1_NENC; i++)
-        fm1_in.enc_prev[i] = fm1_in.enc_last[i] = 0xFF;   /* seeded by the first frame */
+        fm1_enc_init(&fm1__enc[i]);                       /* seeded by the first frame */
 }
 
 static void fm1__key(uint32_t id, uint32_t closed)
@@ -207,43 +204,12 @@ static void fm1__frame(void)
         for (r = 1; r < 5u; r++)
             if (FM1_KEYMAP[r][p] >= 0)
                 fm1__key((uint32_t)FM1_KEYMAP[r][p], (fm1_in.raw[p] >> r) & 1u);
-    for (e = 0; e < FM1_NENC; e++) {               /* quadrature decoder + detents */
+    for (e = 0; e < FM1_NENC; e++) {               /* quadrature decoder + detents (fm1_enc.h) */
         const uint8_t *m = FM1_ENC[e];
         uint32_t cur = ((fm1_in.raw[m[0]] >> m[1]) & 1u) << 1 | ((fm1_in.raw[m[2]] >> m[3]) & 1u);
-        uint32_t idx;
-        volatile int8_t *sub = &fm1_in.enc_sub[e];
-        if (cur != fm1_in.enc_last[e]) {
-            fm1_in.enc_last[e] = (uint8_t)cur;
-            fm1_in.enc_still[e] = 0;
-            continue;
-        }
-        if (fm1_in.enc_prev[e] == 0xFF) {          /* first frame: the knob rests here */
-            fm1_in.enc_prev[e] = (uint8_t)cur;
-            fm1_in.enc_rest[e] = (uint8_t)(1u << cur);
-        }
-        if (fm1_in.enc_still[e] < 255u && ++fm1_in.enc_still[e] == FM1_REST_FRAMES) {
-            /* learn detent states: one state, or a complementary pair (00/11 or
-             * 01/10). Anything else restarts the set; with 3-4 rest states every
-             * arrival would look like a detent with |sub| < 2. */
-            uint32_t r = fm1_in.enc_rest[e], bit = 1u << cur, comp = 1u << (cur ^ 3u);
-            if (!(r & bit))
-                fm1_in.enc_rest[e] = (uint8_t)(r == comp ? (r | bit) : bit);
-        }
-        if (cur == fm1_in.enc_prev[e])
-            continue;
-        idx = (uint32_t)fm1_in.enc_prev[e] << 2 | cur;
-        if ((0x4182u >> idx) & 1u)
-            (*sub)++;
-        else if ((0x2814u >> idx) & 1u)
-            (*sub)--;
-        fm1_in.enc_prev[e] = (uint8_t)cur;
-        if ((fm1_in.enc_rest[e] >> cur) & 1u) {    /* back on a detent */
-            if (*sub >= 2)
-                fm1_in.enc_steps[e]++;
-            else if (*sub <= -2)
-                fm1_in.enc_steps[e]--;
-            *sub = 0;
-        }
+        int step = fm1_enc_frame(&fm1__enc[e], cur);
+        if (step)
+            fm1_in.enc_steps[e] += (int16_t)step;
     }
     fm1_in.frames++;
 }

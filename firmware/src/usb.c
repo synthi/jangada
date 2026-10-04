@@ -488,6 +488,18 @@ static int ota_wire_send(const uint8_t *p, uint32_t n)   /* F0..F7 -> USB-MIDI S
               (k > 2u ? (uint32_t)p[i + 2] << 24 : 0u);
         while (so_w - so_r >= SXQ) {
             if (!*(volatile uint8_t *)&usb.config || ota_now_ms() - t0 > 200u) {
+                /* Jangada: given up part way: close the SysEx (a lone F7), so the notes that follow
+                 * are not read as its data; with no room for even that, the host has gone */
+                if (i && *(volatile uint8_t *)&usb.config) {
+                    uint32_t t1 = ota_now_ms();
+                    while (so_w - so_r >= SXQ && ota_now_ms() - t1 < 50u)
+                        ota_idle();
+                    if (so_w - so_r < SXQ) {
+                        sx_out_q[so_w % SXQ] = 0x05u | 0xF7u << 8;   /* CIN 5: SysEx ends, 1 byte */
+                        RING_PUBLISH();
+                        so_w++;
+                    }
+                }
                 sx_busy = 0;
                 return -1;
             }

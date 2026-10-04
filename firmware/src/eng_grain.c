@@ -97,9 +97,9 @@ typedef struct {
     uint8_t src;                 /* SRC + 1 the index holds, 0 = none */
     uint8_t nz;
 } gr_part_t;
-static gr_part_t gr_p[NPART] __attribute__((section(".pool")));
+static gr_part_t gr_p[NTRK] __attribute__((section(".pool")));   /* Jangada: NTRK (G_T4) */
 
-static uint32_t gr_part(const track_t *t) { return (uint32_t)(t - trk) % NPART; }
+static uint32_t gr_part(const track_t *t) { return (uint32_t)(t - trk) % NTRK; }
 static uint32_t gr_nz(uint32_t src) { return src < SMP_NSETS ? SMP_SETS[src].nz : usr_nz[(src - SMP_NSETS) % SMP_USER_SLOTS]; }
 static const smp_zone_t *gr_zone(uint32_t src, uint32_t zl)
 {
