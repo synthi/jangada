@@ -56,6 +56,10 @@ static int track_ok(const proj_trk_t *n, const proj_trk_v2_t *o, uint32_t t)
           n->p[P_SLDEPTH] == TP[P_SLDEPTH].def;
     for (k = 0; k < 8u; k++)
         ok &= n->p[P_E0 + k] == oldv(t, 45u + k);
+    for (k = P_M1SRC; k <= P_M4AMT; k++)              /* Jangada's matrix: off */
+        ok &= n->p[k] == TP[k].def;
+    for (k = 8u; k < NEDIT; k++)                      /* E9..: the engine's defaults */
+        ok &= n->p[P_E0 + k] == ENGINES[t == TRK_DRUM ? 0u : o->engine % NENGINES]->edit[k].def;
     return ok;
 }
 
@@ -64,17 +68,21 @@ int main(void)
     static project_v2_t v2;
     static project_v1_t v1;
     static project_t q, q2;
+    static project_v3_t v3;
     static union {
-        project_t v3;
+        project_t ram;
+        project_v3_t v3;
         project_v2_t v2;
         project_v1_t v1;
+        uint8_t jng[4096];
     } buf;
     uint32_t i, t;
     int bad = 0, ok;
 
-    bad += check("layout: SLICER ids just before P_E0, P_E0 = old P_E0 + 4",
-                 P_SLCR == P_DETUNE + 1 && P_SLDEPTH + 1 == P_E0 && P_E0 == 49 && P_COUNT == PROJ_NP_V2 + 4u);
-    bad += check("format 3 fits one flash object", sizeof(project_t) <= 4096u - 64u);
+    bad += check("keys: Felucca's format-3 positions are keys 0..56",
+                 P_KEY[P_LEVEL] == 0 && P_KEY[P_SLDEPTH] == 48 && P_KEY[P_E0] == 49 && P_KEY[P_E7] == 56);
+    bad += check("JNG1 fits one flash object", JNG_SIZE(P_COUNT, G_COUNT) <= 4096u - 256u &&
+                                                   sizeof(project_v3_t) <= 4096u - 256u);
 
     /* format 2, as written before the SLICER */
     memset(&v2, 0, sizeof v2);
@@ -103,12 +111,51 @@ int main(void)
                  q.t[0].engine == 7 && q.t[1].engine == 0 && q.t[2].engine == 6 && q.t[3].engine == 0 &&
                  str_eq(ENGINES[7]->name, "WHEEL") && str_eq(ENGINES[6]->name, "TRIO") && NENGINES > 8);
 
-    /* a FUN3 round trip: stored as is (an engine added since: SLICE, 8) */
+    /* a Felucca 0.9 project (FUN3: 57 values = keys 0..56) from this one (an engine added
+     * since: SLICE, 8) */
     q.t[1].engine = 8;
+    proj_fill(&q);
     q.sum = proj_sum(&q);
-    memcpy(&buf, &q, sizeof q);
-    bad += check("FUN3 -> FUN3: as stored (engine 8 too)",
-                 proj_import(&q2, &buf, (int)sizeof q) && !memcmp(&q, &q2, sizeof q) && q2.t[1].engine == 8);
+    memset(&v3, 0, sizeof v3);
+    v3.magic = PROJ_MAGIC_V3;
+    v3.size = sizeof v3;
+    for (i = 0; i < PROJ_NG_V2; i++)
+        v3.g[i] = q.g[i];
+    v3.sel = q.sel;
+    for (t = 0; t < NTRK; t++) {
+        for (i = 0; i < PROJ_NP_V3; i++)
+            v3.t[t].p[i] = q.t[t].p[key_param(i)];
+        v3.t[t].engine = q.t[t].engine;
+        v3.t[t].preset = q.t[t].preset;
+        memcpy(v3.t[t].step, q.t[t].step, sizeof v3.t[t].step);
+    }
+    v3.sum = proj_hash(&v3, sizeof v3 - 4u);
+    memcpy(&buf, &v3, sizeof v3);
+    bad += check("FUN3 (Felucca 0.9) -> today: every value (engine 8 too)",
+                 proj_import(&q2, &buf, (int)sizeof v3) && !memcmp(&q, &q2, sizeof q) && q2.t[1].engine == 8);
+
+    {   /* JNG1: the stored form, keyed */
+        uint32_t n;
+        q.t[2].p[P_M2SRC] = 3;                         /* values only Jangada has */
+        q.t[2].p[P_M2AMT] = -20;
+        q.t[0].p[P_E0 + 12] = 5;
+        q.sum = proj_sum(&q);
+        n = proj_to_jng(&q, buf.jng);
+        bad += check("JNG1 -> today: as stored", n == JNG_SIZE(P_COUNT, G_COUNT) &&
+                                                     proj_import(&q2, buf.jng, (int)n) && !memcmp(&q, &q2, sizeof q));
+        buf.jng[JNG_HDR + P_LEVEL] = 120;              /* a key this build does not know, instead of LEVEL's */
+        {
+            uint32_t sum = proj_hash(buf.jng, n - 4u);
+            memcpy(buf.jng + n - 4u, &sum, 4);
+        }
+        ok = proj_import(&q2, buf.jng, (int)n);
+        for (t = 0; t < NTRK; t++)
+            for (i = 0; i < P_COUNT; i++)
+                ok &= q2.t[t].p[i] == (i == P_LEVEL ? TP[P_LEVEL].def : q.t[t].p[i]);
+        bad += check("JNG1: unknown key skipped, missing one its default", ok);
+        buf.jng[20]++;
+        bad += check("JNG1 with a bad checksum: refused", !proj_import(&q2, buf.jng, (int)n));
+    }
 
     /* damaged / wrong size */
     v2.t[1].p[3]++;
@@ -117,9 +164,9 @@ int main(void)
     v2.t[1].p[3]--;
     memcpy(&buf, &v2, sizeof v2);
     bad += check("FUN2 with a wrong length: refused", !proj_import(&q2, &buf, (int)sizeof v2 - 2));
-    memcpy(&buf, &q, sizeof q);
+    memcpy(&buf, &v3, sizeof v3);
     buf.v3.magic = PROJ_MAGIC_V2;
-    bad += check("FUN3 size with a FUN2 magic: refused", !proj_import(&q2, &buf, (int)sizeof q));
+    bad += check("FUN3 size with a FUN2 magic: refused", !proj_import(&q2, &buf, (int)sizeof v3));
 
     /* format 1: one instrument -> track 1, the others their defaults */
     memset(&v1, 0, sizeof v1);

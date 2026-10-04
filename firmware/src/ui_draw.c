@@ -722,9 +722,9 @@ static void draw_foot(void)
         str_cpy(ti, "HOME", sizeof ti);
     } else {                                           /* page title + number in its family: "ENV DEST 2/2" */
         uint32_t i, n = 0, k = 0;
-        const char *pt = pg->scope == SC_ENGINE ? e->page_title[pg->id[0] != P_E0] : 0;   /* EDIT: the engine's */
+        const char *pt = pg->scope == SC_ENGINE && pg->id[0] < P_E8 ? e->page_title[pg->id[0] != P_E0] : 0;   /* EDIT 1 / 2: the engine's */
         for (i = 0; i < NPAGES; i++)
-            if (PAGES[i].fam == pg->fam) {
+            if (PAGES[i].fam == pg->fam && page_used(i)) {
                 n++;
                 if (i == ui.page)
                     k = n;

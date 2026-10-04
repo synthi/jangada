@@ -218,6 +218,7 @@ static void voice_start(track_t *t, voice_t *v, uint32_t note, uint32_t vel, int
     v->active = 1;
     v->stage = 1;
     v->age = ++vage;
+    v->rnd = (int16_t)((v->age * 2654435761u) >> 16);   /* matrix RND: from the age, rng() untouched */
     v->pitch16 = (int32_t)note * 16;
     glide_set(t, v, glide);
     if (!sounding) {
@@ -435,7 +436,7 @@ static void engine_block(track_t *t)
                 trk_note_on(t, t->xp_note[i], t->xp_vel[i]);
         }
     }
-    for (i = 0; i < 8u; i++)                            /* the engine's own values, for a later fade */
+    for (i = 0; i < NEDIT; i++)                         /* the engine's own values, for a later fade */
         t->pe_old[i] = t->p[P_E0 + i];
 }
 
@@ -485,15 +486,14 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
     /* TUNE in cents: whole 1/16 semitones in the pitch, the rest as a fine factor (no dead zone) */
     int32_t tune = song.g[G_TUNE] >= 0 ? song.g[G_TUNE] * 16 / 100 : -((-song.g[G_TUNE] * 16 + 99) / 100);
     int32_t tune_fine = (song.g[G_TUNE] * 16 - tune * 100) * 2367 / 16000;   /* rest, in 1/4096 (1 ct = 2.367) */
-    uint32_t nr = 0, fade = t->xf_on && t->xf;
-    int16_t pe_new[8];
+    uint32_t nr = 0, fade = t->xf_on && t->xf, mods = mod_active(t);
+    int16_t pe_new[NEDIT], keep[NEDIT];
     for (i = 0; i < n; i++)
         out[i] = 0;
-    if (fade)                                           /* engine switch: the old engine, its own values */
-        for (i = 0; i < 8u; i++) {
-            pe_new[i] = t->p[P_E0 + i];
-            t->p[P_E0 + i] = t->pe_old[i];
-        }
+    if (fade) {                                         /* engine switch: the old engine, its own values */
+        memcpy(pe_new, &t->p[P_E0], sizeof pe_new);
+        memcpy(&t->p[P_E0], t->pe_old, sizeof pe_new);
+    }
     track_lfo_tick(t);
     if (e->block)                                       /* the engine's per-part work (DRAWBAR: bars, rotor) */
         e->block(t);
@@ -525,21 +525,27 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
         }
         if (!env && !m.amp0 && v->stage == 2 && !eng_sampled(e))
             continue;                                   /* held at a silent sustain (SUS 0): nothing to render */
-        pitch = v->pitch_cur + tune + ((lfo * p[P_LD_PIT] * 3) >> 15) + ((m.envq15 * p[P_ED_PIT] * 3) >> 15);
-        m.pitch16 = clamp(pitch, 0, 2047);
-        m.inc = PITCH_INC[m.pitch16];
-        if (v->fine + tune_fine)                        /* unison detune and fine tune, below 1/16 st */
-            m.inc += (uint32_t)((int32_t)(m.inc >> 12) * (v->fine + tune_fine));
-        m.cutoff = ((lfo * p[P_LD_FLT]) >> 7) + ((m.envq15 * p[P_ED_FLT]) >> 7);
-        if (v->vel > 110)                               /* accent opens the filter with the env */
-            m.cutoff += (m.envq15 * 24) >> 7;
-        m.shape = (64 << 8) + ((lfo * p[P_LD_SHP]) >> 7) + ((m.envq15 * p[P_ED_SHP]) >> 7);
-        e->render(t, v, out, n, &m);
+        {
+            int32_t md[3] = {0, 0, 0};
+            uint32_t moved = mods ? mod_voice(t, e, v, lfo, m.envq15, md, keep) : 0;
+            pitch = v->pitch_cur + tune + ((lfo * p[P_LD_PIT] * 3) >> 15) + ((m.envq15 * p[P_ED_PIT] * 3) >> 15) + md[1];
+            m.pitch16 = clamp(pitch, 0, 2047);
+            m.inc = PITCH_INC[m.pitch16];
+            if (v->fine + tune_fine)                        /* unison detune and fine tune, below 1/16 st */
+                m.inc += (uint32_t)((int32_t)(m.inc >> 12) * (v->fine + tune_fine));
+            m.cutoff = ((lfo * p[P_LD_FLT]) >> 7) + ((m.envq15 * p[P_ED_FLT]) >> 7);
+            if (v->vel > 110)                               /* accent opens the filter with the env */
+                m.cutoff += (m.envq15 * 24) >> 7;
+            m.shape = (64 << 8) + ((lfo * p[P_LD_SHP]) >> 7) + ((m.envq15 * p[P_ED_SHP]) >> 7) + md[2];
+            m.cutoff += md[0];
+            e->render(t, v, out, n, &m);
+            if (moved)
+                mod_restore(t, moved, keep);
+        }
         nr++;
     }
     if (fade) {
-        for (i = 0; i < 8u; i++)
-            t->p[P_E0 + i] = pe_new[i];
+        memcpy(&t->p[P_E0], pe_new, sizeof pe_new);
         t->xf--;
     }
     return nr;

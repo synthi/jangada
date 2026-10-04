@@ -13,7 +13,14 @@
  *
  * Built on the host too (tests/project_test.c, -DPROJ_HOST): the part above the #ifndef
  * PROJ_HOST needs core.h, params.c (TP), the engines and trk_def_engine (ui.c). */
-#define PROJ_MAGIC 0x46554E33u                 /* "FUN3": four tracks, P_COUNT parameters each (format 3) */
+/* Jangada: a RAM slot is today's project_t ("JNGR"); flash holds "JNG1", self-describing: the
+ * stable keys of the values it stores (keys.h), then the values in that order, so a project
+ * survives parameters being added or moved. FUN3 / FUN2 / FUN1 (Felucca) are read and converted. */
+#define PROJ_MAGIC 0x52474E4Au                 /* "JNGR": a RAM slot, today's layout */
+#define PROJ_MAGIC_JNG 0x31474E4Au             /* "JNG1": stored, keyed (proj_to_jng / proj_from_jng) */
+#define PROJ_MAGIC_V3 0x46554E33u              /* "FUN3": Felucca 0.9, 57 values a track = keys 0..56 */
+#define PROJ_NP_V3 57u
+#define PROJ_DEF ((int16_t)-32768)             /* a value the stored data has not: its default (proj_fill) */
 #define PROJ_MAGIC_V2 0x46554E32u              /* "FUN2": four tracks, PROJ_NP_V2 parameters; read only */
 #define PROJ_MAGIC_V1 0x46554E31u              /* "FUN1": one instrument; loads into track 1 */
 #define PROJ_NP_V2 53u                         /* P_COUNT of formats 1 and 2 (P_E0 was 45) */
@@ -30,6 +37,18 @@ typedef struct {
     proj_trk_t t[NTRK];
     uint32_t sum;
 } project_t;
+typedef struct {                               /* a track of format 3 (Felucca 0.9), read only */
+    int16_t p[PROJ_NP_V3];
+    uint8_t engine, preset;
+    step_t step[NSTEP];
+} proj_trk_v3_t;
+typedef struct {                               /* format 3, read only */
+    uint32_t magic, size;
+    int16_t g[PROJ_NG_V2];
+    uint8_t sel, rsv[3];
+    proj_trk_v3_t t[NTRK];
+    uint32_t sum;
+} project_v3_t;
 typedef struct {                               /* a track of formats 1 and 2, read only */
     int16_t p[PROJ_NP_V2];
     uint8_t engine, preset;
@@ -49,6 +68,7 @@ typedef struct {                               /* format 1 (until 0.5 beta), rea
     uint32_t sum;
 } project_v1_t;
 _Static_assert(sizeof(project_v2_t) == 2552u && sizeof(project_v1_t) == 688u, "formats 1 / 2 as they were stored");
+_Static_assert(sizeof(project_v3_t) == 2584u, "format 3 as Felucca 0.9 stored it");
 project_t proj_slot[4] __attribute__((section(".noinit")));
 
 static uint32_t proj_hash(const void *p, uint32_t n)   /* FNV-1a over n bytes */
@@ -74,8 +94,10 @@ static void proj_g_from_v2(int16_t *g, const int16_t *g2)
 static void proj_trk_from_v2(proj_trk_t *d, const proj_trk_v2_t *s, int drum)
 {
     uint32_t k, nc = PROJ_NP_V2 - 8u;
-    for (k = 0; k < P_E0; k++)
-        d->p[k] = k < nc ? s->p[k] : TP[k].def;
+    for (k = 0; k < P_COUNT; k++)
+        d->p[k] = PROJ_DEF;
+    for (k = 0; k < nc; k++)                    /* P_LEVEL..: keys 0.. as they were */
+        d->p[key_param(k)] = s->p[k];
     for (k = 0; k < 8u; k++)
         d->p[P_E0 + k] = s->p[nc + k];
     d->engine = drum ? 0u : s->engine;          /* (indices 0..7 as they were) */
@@ -127,29 +149,141 @@ static int proj_from_v1(project_t *q, const project_v1_t *v1, int n)
     return 1;
 }
 
-/* n bytes of a stored project (any format) -> slot q as format 3; 0 = not a project */
+/* values a stored format did not have (PROJ_DEF) -> their defaults, for the track's engine */
+static void proj_fill(project_t *q)
+{
+    uint32_t i, k;
+    for (i = 0; i < NTRK; i++) {
+        uint32_t e = i < NPART ? q->t[i].engine % NENGINES : 0u;
+        for (k = 0; k < P_COUNT; k++)
+            if (q->t[i].p[k] == PROJ_DEF)
+                q->t[i].p[k] = k >= P_E0 && k < P_E0 + NEDIT ? ENGINES[e]->edit[k - P_E0].def : TP[k].def;
+    }
+}
+
+/* a format 3 project (Felucca 0.9) -> slot q: its 57 values are keys 0..56 */
+static int proj_from_v3(project_t *q, const project_v3_t *v3, int n)
+{
+    static const uint8_t K3[PROJ_NP_V3] = {
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28,
+        29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56};
+    uint32_t i;
+    if (n != (int)sizeof *v3 || v3->magic != PROJ_MAGIC_V3 || v3->size != sizeof *v3 ||
+        v3->sum != proj_hash(v3, sizeof *v3 - 4u))
+        return 0;
+    memset(q, 0, sizeof *q);
+    q->magic = PROJ_MAGIC;
+    q->size = sizeof *q;
+    proj_g_from_v2(q->g, v3->g);
+    q->sel = v3->sel;
+    for (i = 0; i < NTRK; i++) {
+        key_map(K3, v3->t[i].p, PROJ_NP_V3, q->t[i].p, PROJ_DEF);
+        q->t[i].engine = i == TRK_DRUM ? 0u : v3->t[i].engine;
+        q->t[i].preset = i == TRK_DRUM ? 0u : v3->t[i].preset;
+        memcpy(q->t[i].step, v3->t[i].step, sizeof q->t[i].step);
+    }
+    return 1;
+}
+
+/* "JNG1": magic, size, np, ng, sel, 0, key[np] (+ a pad byte to even), g[ng],
+ * NTRK x (p[np], engine, preset, step[NSTEP]), FNV-1a of all before. Little-endian, unaligned. */
+#define JNG_HDR 12u
+#define JNG_SIZE(np, ng) (JNG_HDR + (((np) + 1u) & ~1u) + 2u * (ng) + NTRK * (2u * (np) + 2u + sizeof(step_t) * NSTEP) + 4u)
+static uint32_t jng_size(uint32_t np, uint32_t ng) { return JNG_SIZE(np, ng); }
+
+static uint32_t proj_to_jng(const project_t *q, uint8_t *b)   /* -> bytes written */
+{
+    uint32_t n = jng_size(P_COUNT, G_COUNT), o = JNG_HDR, i, k, sum;
+    uint32_t m = PROJ_MAGIC_JNG;
+    memset(b, 0, n);
+    memcpy(b, &m, 4);
+    memcpy(b + 4, &n, 4);
+    b[8] = P_COUNT;
+    b[9] = G_COUNT;
+    b[10] = q->sel;
+    for (k = 0; k < P_COUNT; k++)
+        b[o + k] = P_KEY[k];
+    o += (P_COUNT + 1u) & ~1u;
+    memcpy(b + o, q->g, 2u * G_COUNT);
+    o += 2u * G_COUNT;
+    for (i = 0; i < NTRK; i++) {
+        memcpy(b + o, q->t[i].p, 2u * P_COUNT);
+        o += 2u * P_COUNT;
+        b[o++] = q->t[i].engine;
+        b[o++] = q->t[i].preset;
+        memcpy(b + o, q->t[i].step, sizeof q->t[i].step);
+        o += sizeof q->t[i].step;
+    }
+    sum = proj_hash(b, o);
+    memcpy(b + o, &sum, 4);
+    return n;
+}
+
+static int proj_from_jng(project_t *q, const uint8_t *b, int n)
+{
+    uint32_t m, size, np, ng, o = JNG_HDR, i, sum;
+    int16_t vals[KEY_MAX];
+    if (n < (int)JNG_HDR + 4)
+        return 0;
+    memcpy(&m, b, 4);
+    memcpy(&size, b + 4, 4);
+    np = b[8];
+    ng = b[9];
+    if (m != PROJ_MAGIC_JNG || size != (uint32_t)n || np > KEY_MAX || !np || jng_size(np, ng) != size)
+        return 0;
+    memcpy(&sum, b + size - 4u, 4);
+    if (sum != proj_hash(b, size - 4u))
+        return 0;
+    memset(q, 0, sizeof *q);
+    q->magic = PROJ_MAGIC;
+    q->size = sizeof *q;
+    q->sel = b[10];
+    {
+        const uint8_t *keys = b + o;
+        o += (np + 1u) & ~1u;
+        for (i = 0; i < G_COUNT; i++)          /* globals by position, as G_* has kept them */
+            if (i < ng)
+                memcpy(&q->g[i], b + o + 2u * i, 2);
+            else
+                q->g[i] = GP[i].def;
+        o += 2u * ng;
+        for (i = 0; i < NTRK; i++) {
+            memcpy(vals, b + o, 2u * np);
+            o += 2u * np;
+            key_map(keys, vals, np, q->t[i].p, PROJ_DEF);
+            q->t[i].engine = b[o++];
+            q->t[i].preset = b[o++];
+            memcpy(q->t[i].step, b + o, sizeof q->t[i].step);
+            o += sizeof q->t[i].step;
+        }
+    }
+    return 1;
+}
+
+/* n bytes of a stored project (any format) -> slot q in today's layout; 0 = not a project */
 static int proj_import(project_t *q, const void *b, int n)
 {
-    if (n == (int)sizeof *q && proj_ok((const project_t *)b)) {
-        memcpy(q, b, sizeof *q);
-        return 1;
-    }
-    return proj_from_v2(q, (const project_v2_t *)b, n) || proj_from_v1(q, (const project_v1_t *)b, n);
+    if (!proj_from_jng(q, (const uint8_t *)b, n) && !proj_from_v3(q, (const project_v3_t *)b, n) &&
+        !proj_from_v2(q, (const project_v2_t *)b, n) && !proj_from_v1(q, (const project_v1_t *)b, n))
+        return 0;
+    proj_fill(q);
+    q->sum = proj_sum(q);
+    return 1;
 }
 
 #ifndef PROJ_HOST
 #if FELUCCA_FLASH
+/* the stored form of a project, both ways (any format in, "JNG1" out) */
+static uint8_t proj_io[ST_PAYLOAD_MAX] __attribute__((aligned(4)));
+_Static_assert(JNG_SIZE(P_COUNT, G_COUNT) <= ST_PAYLOAD_MAX && sizeof(project_v3_t) <= ST_PAYLOAD_MAX,
+               "a stored project fits one flash object");
+
 /* slot from flash into RAM (format 3, or format 2 / 1 converted) */
 static void proj_fetch(uint32_t slot)
 {
-    static union {
-        project_t v3;
-        project_v2_t v2;
-        project_v1_t v1;
-    } tmp;
     project_t *q = &proj_slot[slot & 3u];
-    int n = st_load(OBJ_PROJECT0 + (slot & 3u), &tmp, sizeof tmp);
-    if (!proj_import(q, &tmp, n))
+    int n = st_load(OBJ_PROJECT0 + (slot & 3u), proj_io, sizeof proj_io);
+    if (!proj_import(q, proj_io, n))
         q->magic = 0;
 }
 #endif
@@ -173,7 +307,8 @@ static void project_save(uint32_t slot)
     p->sum = proj_sum(p);
 #if FELUCCA_FLASH
     if (flash_ok) {
-        ui_message(st_save(OBJ_PROJECT0 + (slot & 3u), p, sizeof *p) ? "SAVE ERROR" : "SAVED");
+        uint32_t n = proj_to_jng(p, proj_io);           /* stored keyed: "JNG1" */
+        ui_message(st_save(OBJ_PROJECT0 + (slot & 3u), proj_io, n) ? "SAVE ERROR" : "SAVED");
         return;
     }
 #endif
@@ -205,7 +340,7 @@ static void project_load(uint32_t slot)
         t->eng_req = (uint8_t)e;
         t->user = 0;                                    /* (no user preset slot is saved) */
         for (i = 0; i < P_COUNT; i++) {                 /* every value back inside its range */
-            const param_desc_t *d = i >= P_E0 && i <= P_E7 ? &ENGINES[e]->edit[i - P_E0] : &TP[i];
+            const param_desc_t *d = i >= P_E0 && i < P_E0 + NEDIT ? &ENGINES[e]->edit[i - P_E0] : &TP[i];
             t->p[i] = (int16_t)clamp(s->p[i], d->min, d->max);
         }
         t->preset = (uint8_t)(ENGINES[e]->npresets ? (s->preset == 0xFFu ? 0u : s->preset) % ENGINES[e]->npresets : 0u);

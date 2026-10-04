@@ -47,11 +47,18 @@ enum {                          /* per-track parameters */
     P_DIST, P_CHOR, P_DLY, P_REV,
     P_VOICE, P_GLIDE, P_PAN, P_MUTE,
     P_GLMODE, P_PRIO, P_ALLOC, P_DETUNE,
-    P_SLCR, P_SLPAT, P_SLRATE, P_SLDEPTH,      /* SLICER insert (slicer.c); new common parameters go just
-                                                * before P_E0 (user presets and projects map by count) */
+    P_SLCR, P_SLPAT, P_SLRATE, P_SLDEPTH,      /* SLICER insert (slicer.c) */
+    /* Jangada: the modulation matrix (mod.c), NMOD slots of SRC DST AMT */
+    P_M1SRC, P_M1DST, P_M1AMT, P_M2SRC, P_M2DST, P_M2AMT,
+    P_M3SRC, P_M3DST, P_M3AMT, P_M4SRC, P_M4DST, P_M4AMT,
+    /* the engine's own parameters, NEDIT of them (Felucca had 8). Saved data does not depend
+     * on these positions: projects and user presets store stable keys (P_KEY, params.c) */
     P_E0, P_E1, P_E2, P_E3, P_E4, P_E5, P_E6, P_E7,
+    P_E8, P_E9, P_E10, P_E11, P_E12, P_E13, P_E14, P_E15,
     P_COUNT
 };
+#define NEDIT 16                 /* engine parameters P_E0.. */
+#define NMOD 4                   /* modulation slots */
 
 enum {                          /* global parameters */
     G_BPM, G_SWING, G_CLOCK, G_TUNE,
@@ -77,6 +84,7 @@ typedef struct {
     uint32_t ph[3];
     int32_t s[8];                /* engine state (filters, envs) */
     uint32_t age;
+    int16_t rnd;                 /* Jangada: the matrix's RND source, fixed at note-on (Q15) */
 } voice_t;
 
 typedef struct {                 /* per-voice control-rate modulation, computed in voice.c */
@@ -98,6 +106,8 @@ typedef struct {
     uint8_t fx[4];               /* DIST, CHORUS, DELAY, REVERB sends */
     uint8_t arp[4];              /* MODE, RATE, OCT, GATE */
     uint8_t pat;                 /* sequence pattern (PATTERNS[pat - 1]), loaded only into an empty sequencer */
+    int8_t x[NEDIT - 8];         /* Jangada: P_E8.. stored + 1, 0 = the engine's default; last, so the
+                                  * positional initializers above stay as they are (.x = {..}) */
 } preset_t;
 #define FX(d, c, dl, r) .fx = {(d) + 1, (c) + 1, (dl) + 1, (r) + 1}
 #define ARP(m, rt, o, g) .arp = {(m) + 1, (rt) + 1, (o) + 1, (g) + 1}
@@ -107,7 +117,7 @@ struct track;
 typedef struct {
     const char *name;            /* "VA" */
     const char *page_title[2];
-    param_desc_t edit[8];        /* P_E0..P_E7 */
+    param_desc_t edit[NEDIT];    /* P_E0..; no label = not used by this engine */
     const preset_t *presets;
     uint8_t npresets;
     int8_t fil_page;             /* EDIT page that holds the filter, -1 = none */
@@ -201,7 +211,7 @@ typedef struct track {
     int16_t armp, aholdp;        /* P_AMODE / P_AHOLD as last seen by the ISR */
     /* engine switch (voice.c engine_block): the old engine's voices fade out, then it switches */
     uint8_t xf_on, xf;           /* fading; blocks of the fade still to render */
-    int16_t pe_old[8];           /* P_E0..P_E7 of the sounding engine: the fade renders with these */
+    int16_t pe_old[NEDIT];       /* P_E0.. of the sounding engine: the fade renders with these */
     uint8_t xp_n, xp_note[4], xp_vel[4];   /* note-ons during the fade, played on the new engine */
 } track_t;
 
@@ -227,3 +237,5 @@ static volatile uint32_t fm1_ms;  /* milliseconds since boot (TIMER4-based, TIME
 /* boot-loop guard (main.c): two boots in a row that die in the first 30 s -> UBOOT */
 #define BOOTGUARD_MAGIC 0x42475244u
 struct { uint32_t magic, failed, pending; } bootguard __attribute__((section(".noinit")));
+
+#include "keys.h"                /* Jangada: stable keys of the P_* parameters (saved data) */

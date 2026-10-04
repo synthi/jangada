@@ -5,61 +5,149 @@
  * records each, mirrored in RAM so browsing never reads flash. A record:
  * engine, name, the instrument parameters, a 16-step pattern.
  *
- * A bank whose magic, record size or slot count differ reads as empty; so
- * does a record with another UP_VER. A record keeps np = the P_COUNT it was
- * stored with; when that differs it is mapped by count: its last 8 values
- * are P_E0..P_E7, the first np - 8 are P_LEVEL.. in order, missing ones take
- * their defaults. So common parameters may only be added just before P_E0
- * (else bump UP_VER).
+ * Jangada: a bank ("UPB2") stores the stable keys of its values (keys.h) once, and each
+ * record its values in that order, so parameters can be added or moved. In RAM every
+ * record is in today's P_* order (np = P_COUNT); values the stored data did not have are
+ * UP_DEF until used (up_values: the default for the record's engine). Felucca's banks
+ * ("UPB1", 192-byte records mapped by count: the last 8 values P_E0..P_E7, the first
+ * np - 8 P_LEVEL.. in order) are converted when loaded. Any other shape reads as empty.
  *
  * With -DUP_HOST (host test) only the part above #ifndef UP_HOST is built;
  * it needs nothing but core.h. */
 #define UP_PER_BANK 16u
-#define UP_PMAX 72u                              /* room for P_COUNT to grow */
+#define UP_PMAX 88u                              /* room for P_COUNT to grow */
 #define UP_USED 0xA5u
-#define UP_VER 1u
-#define UP_BANK_MAGIC 0x31425055u                /* "UPB1" */
+#define UP_VER 2u
+#define UP_BANK_MAGIC 0x32425055u                /* "UPB2" */
+#define UP_DEF ((int16_t)-32768)                 /* not stored: the engine's / TP default */
 typedef struct {
-    uint8_t used, ver, engine, np;               /* UP_USED, UP_VER, engine, P_COUNT when stored */
+    uint8_t used, ver, engine, np;               /* UP_USED, UP_VER, engine, values stored */
     char name[12];                               /* ASCII 32..126, 0-padded (no 0 when 12 long) */
-    int16_t p[UP_PMAX];
+    int16_t p[UP_PMAX];                          /* in the bank's key order (RAM: P_* order) */
     uint8_t note[16], flags[16];                 /* note 0 = rest; flags 1 accent, 2 slide, 4 tie */
 } up_rec_t;
 typedef struct {
     uint32_t magic;
     uint16_t rsize, nslot;
+    uint8_t np, rsv[3];                          /* keys in use */
+    uint8_t key[UP_PMAX];                        /* the stable key of each value of a record */
     up_rec_t r[UP_PER_BANK];
 } up_bank_t;
-_Static_assert(sizeof(up_rec_t) == 192, "user preset record layout");
-_Static_assert(P_COUNT <= UP_PMAX && P_COUNT < 128, "user preset record: P_COUNT");
+_Static_assert(sizeof(up_rec_t) == 224, "user preset record layout");
+_Static_assert(P_COUNT <= UP_PMAX && P_COUNT < KEY_MAX, "user preset record: P_COUNT");
+
+/* Felucca's bank, read and converted (up_bank_check) */
+#define UP_V1_MAGIC 0x31425055u                  /* "UPB1" */
+#define UP_V1_PMAX 72u
+typedef struct {
+    uint8_t used, ver, engine, np;
+    char name[12];
+    int16_t p[UP_V1_PMAX];
+    uint8_t note[16], flags[16];
+} up_rec_v1_t;
+typedef struct {
+    uint32_t magic;
+    uint16_t rsize, nslot;
+    up_rec_v1_t r[UP_PER_BANK];
+} up_bank_v1_t;
+_Static_assert(sizeof(up_rec_v1_t) == 192 && sizeof(up_bank_v1_t) == 3080, "Felucca's user preset bank");
 static up_bank_t up_bank[UP_SLOTS / UP_PER_BANK];
 
 static up_rec_t *up_rec(uint32_t k) { return &up_bank[k / UP_PER_BANK].r[k % UP_PER_BANK]; }
 
 static int up_valid(const up_rec_t *r)
 {
-    return r->used == UP_USED && r->ver == UP_VER && r->engine < NENGINES && r->np >= 8u && r->np <= UP_PMAX &&
-           r->name[0];
+    return r->used == UP_USED && r->ver == UP_VER && r->engine < NENGINES && r->np == P_COUNT && r->name[0];
 }
 
 static int up_used(uint32_t k) { return k < UP_SLOTS && up_valid(up_rec(k)); }
 
-static void up_bank_check(uint32_t b, int len)  /* after loading bank b (len bytes, -1 = none): wrong shape -> empty */
+static void up_bank_fresh(up_bank_t *bk)        /* the header of a bank in today's layout */
 {
-    up_bank_t *bk = &up_bank[b];
-    if (len != (int)sizeof *bk || bk->magic != UP_BANK_MAGIC || bk->rsize != sizeof(up_rec_t) ||
-        bk->nslot != UP_PER_BANK)
-        memset(bk, 0, sizeof *bk);
+    uint32_t i;
+    bk->magic = UP_BANK_MAGIC;
+    bk->rsize = sizeof(up_rec_t);
+    bk->nslot = UP_PER_BANK;
+    bk->np = P_COUNT;
+    bk->rsv[0] = bk->rsv[1] = bk->rsv[2] = 0;
+    memset(bk->key, KEY_NONE, sizeof bk->key);
+    for (i = 0; i < P_COUNT; i++)
+        bk->key[i] = P_KEY[i];
 }
 
-/* the record's values in today's P_* order (mapped by count, see above); def = the defaults */
+/* a Felucca record (mapped by count, see the top) -> today's, in place: d may overlap the bytes
+ * of s, so s is copied first */
+static void up_from_v1(up_rec_t *d, const up_rec_v1_t *s)
+{
+    up_rec_v1_t c = *s;
+    uint32_t i, nc;
+    memset(d, 0, sizeof *d);
+    if (c.used != UP_USED || c.ver != 1u || c.np < 8u || c.np > UP_V1_PMAX || !c.name[0])
+        return;                                  /* empty or not readable: an empty slot */
+    nc = c.np - 8u;
+    d->used = UP_USED;
+    d->ver = UP_VER;
+    d->engine = c.engine;
+    d->np = P_COUNT;
+    memcpy(d->name, c.name, sizeof d->name);
+    for (i = 0; i < P_COUNT; i++)
+        d->p[i] = UP_DEF;
+    for (i = 0; i < nc; i++)                     /* P_LEVEL..: keys 0.. as they were */
+        d->p[key_param(i)] = c.p[i];
+    for (i = 0; i < 8u; i++)
+        d->p[P_E0 + i] = c.p[nc + i];
+    memcpy(d->note, c.note, sizeof d->note);
+    memcpy(d->flags, c.flags, sizeof d->flags);
+}
+
+/* after loading bank b (len bytes, -1 = none): a Felucca bank is converted, a bank with other
+ * keys is mapped to today's P_* order, any other shape -> empty */
+static void up_bank_check(uint32_t b, int len)
+{
+    up_bank_t *bk = &up_bank[b];
+    up_bank_v1_t *v1 = (up_bank_v1_t *)(void *)bk;
+    uint32_t i;
+    if (len == (int)sizeof *v1 && v1->magic == UP_V1_MAGIC && v1->rsize == sizeof(up_rec_v1_t) &&
+        v1->nslot == UP_PER_BANK) {
+        /* in place, last record first: record i moves up (8 + 192 i -> 100 + 224 i), never onto
+         * a record not yet converted */
+        for (i = UP_PER_BANK; i-- > 0;)
+            up_from_v1(&bk->r[i], &v1->r[i]);
+        up_bank_fresh(bk);
+        return;
+    }
+    if (len != (int)sizeof *bk || bk->magic != UP_BANK_MAGIC || bk->rsize != sizeof(up_rec_t) ||
+        bk->nslot != UP_PER_BANK || !bk->np || bk->np > UP_PMAX) {
+        memset(bk, 0, sizeof *bk);
+        return;
+    }
+    {   /* stored with other keys (another version): to today's order */
+        uint8_t key[UP_PMAX];
+        uint32_t np = bk->np, same = np == P_COUNT;
+        for (i = 0; same && i < np; i++)
+            same = bk->key[i] == P_KEY[i];
+        if (same)
+            return;
+        memcpy(key, bk->key, sizeof key);
+        for (i = 0; i < UP_PER_BANK; i++) {
+            up_rec_t *r = &bk->r[i];
+            int16_t v[P_COUNT];
+            if (r->used != UP_USED || r->ver != UP_VER || r->np != np)
+                continue;
+            key_map(key, r->p, np, v, UP_DEF);
+            memcpy(r->p, v, sizeof v);
+            r->np = P_COUNT;
+        }
+        up_bank_fresh(bk);
+    }
+}
+
+/* the record's values in today's P_* order; def = the defaults for what it does not hold */
 static void up_params(const up_rec_t *r, int16_t *out, const int16_t *def)
 {
-    uint32_t i, nc = r->np - 8u;
-    for (i = 0; i < P_E0; i++)
-        out[i] = i < nc ? r->p[i] : def[i];
-    for (i = 0; i < 8u; i++)
-        out[P_E0 + i] = r->p[nc + i];
+    uint32_t i;
+    for (i = 0; i < P_COUNT; i++)
+        out[i] = r->p[i] == UP_DEF ? def[i] : r->p[i];
 }
 
 static int up_name_ok(const uint8_t *s, uint32_t n)   /* 1..12 printable ASCII */
@@ -173,9 +261,7 @@ static void up_boot(void)                      /* persist_boot: the banks from f
 static int up_put(uint32_t k, const up_rec_t *r)
 {
     up_bank_t *bk = &up_bank[k / UP_PER_BANK];
-    bk->magic = UP_BANK_MAGIC;
-    bk->rsize = sizeof(up_rec_t);
-    bk->nslot = UP_PER_BANK;
+    up_bank_fresh(bk);
     if (r)
         *up_rec(k) = *r;
     else

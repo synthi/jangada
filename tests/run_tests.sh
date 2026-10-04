@@ -53,11 +53,15 @@ $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/step_test" tests/step_test.c -lm
 run "steps: RTCH ratchet and CHNC chance (Jangada)" "$OUT/step_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/kit_test" tests/kit_test.c -lm
 run "kit: GM 42 / 44 / 49 are not toms (Felucca#25)" "$OUT/kit_test"
+run "keys: stable parameter keys (Jangada)" python3 tests/keys_test.py
+run "editor mock tables == firmware (Jangada)" python3 tools/gen_editor_tables.py --check
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/mod_test" tests/mod_test.c -lm
+run "mod: the modulation matrix (Jangada)" "$OUT/mod_test"
 run "DSP render (ANALOG preset 0)" "$OUT/hostsim" 0 0 1 "$OUT/render.wav"
 mkdir -p build/tracks_demo
 run "TRACKS: 4-track pattern, live recording (lengths, swing), voice budget, engine switch, cost" env TRACKS=build/tracks_demo "$OUT/hostsim" 0 0 1 "$OUT/tracks.wav"
 $CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/project_test" tests/project_test.c -lm
-run "project formats (FUN2 / FUN1 -> FUN3: the SLICER parameters)" "$OUT/project_test"
+run "project formats (JNG1 keyed; Felucca FUN3 / FUN2 / FUN1 read)" "$OUT/project_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/slicer_test" tests/slicer_test.c -lm
 mkdir -p build/slicer_demo
 run "SLICER: no clicks, timing, sync with the sequencer, STUT, cost, demos" "$OUT/slicer_test" build/slicer_demo

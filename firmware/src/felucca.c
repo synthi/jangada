@@ -18,6 +18,7 @@
 #include "gfx.c"
 #include "core.h"
 #include "engines.c"
+#include "mod.c"             /* Jangada: modulation matrix (params.c names its DST, voice.c runs it) */
 #include "drums.c"
 #include "params.c"
 #include "voice.c"

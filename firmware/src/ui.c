@@ -139,12 +139,14 @@ static void open_family(uint32_t fam)
 {
     if (!ui.home && cur_page()->fam == fam) {          /* same button again: next page */
         uint32_t i = ui.page + 1u;
+        while (i < NPAGES && PAGES[i].fam == fam && !page_used(i))
+            i++;                                       /* EDIT 3 / 4 of an engine without them */
         if (i >= NPAGES || PAGES[i].fam != fam)
             i = page_first(fam);
         ui.page = (uint8_t)i;
     } else {
-        ui.page = ui.fam_last[fam] && PAGES[ui.fam_last[fam]].fam == fam ? ui.fam_last[fam]
-                                                                          : (uint8_t)page_first(fam);
+        ui.page = ui.fam_last[fam] && PAGES[ui.fam_last[fam]].fam == fam && page_used(ui.fam_last[fam])
+                      ? ui.fam_last[fam] : (uint8_t)page_first(fam);
     }
     ui.fam_last[fam] = ui.page;
     ui.home = 0;
@@ -269,8 +271,9 @@ static void apply_preset_to(track_t *t, uint32_t pi)
     for (i = 0; i < P_E0; i++)                        /* the rest of the sound to its defaults: a preset */
         if (!param_kept(i))
             t->p[i] = TP[i].def;                     /* sounds the same after any edit (not the pattern, not the mix) */
-    for (i = 0; i < 8u; i++)
-        t->p[P_E0 + i] = (int16_t)e->presets[pi].e[i];
+    for (i = 0; i < NEDIT; i++)
+        t->p[P_E0 + i] = (int16_t)(i < 8u ? e->presets[pi].e[i]
+                                          : e->presets[pi].x[i - 8u] ? e->presets[pi].x[i - 8u] - 1 : e->edit[i].def);
     t->p[P_ATK] = e->presets[pi].env[0];
     t->p[P_DEC] = e->presets[pi].env[1];
     t->p[P_SUS] = e->presets[pi].env[2];
@@ -299,7 +302,7 @@ static void set_engine_of(track_t *t, uint32_t ei)
         return;
     fm1_irq_off();
     t->eng_req = (uint8_t)(ei % NENGINES);
-    for (i = 0; i < 8u; i++)
+    for (i = 0; i < NEDIT; i++)
         t->p[P_E0 + i] = e->edit[i].def;
     apply_preset_to(t, 0);
     fm1_irq_on();

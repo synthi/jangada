@@ -9,6 +9,10 @@ static const char *const N_DIVL[] = {"1/4", "1/8", "1/16", "1/32", "8T", "16T", 
 static const char *const N_SCALE[] = {"CHR", "MAJ", "MIN", "DOR", "MIX", "PEN", "MPEN", "HARM",
                                     "PHRY", "LYD", "LOC", "MEL", "BLUES", "WHOLE", "DIMHW", "DIMWH"};
 static const char *const N_ONOFF[] = {"OFF", "ON"};
+/* Jangada modulation matrix (mod.c): sources, and the targets before the engine's own (MD_E0..) */
+static const char *const N_MSRC[] = {"OFF", "LFO", "ENV", "VEL", "KEY", "RND"};
+static const char *const N_MDST[] = {"CUT", "PIT", "SHP", "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8",
+                                     "E9", "E10", "E11", "E12", "E13", "E14", "E15", "E16"};
 static const char *const N_QUANT[] = {"OFF", "SNAP", "WHITE"};   /* seq.c kb_map; 1 = SNAP as the old ON */
 static const char *const N_VOICE[] = {"POLY", "MONO", "LEG", "UNI"};   /* V_POLY .. V_UNISON */
 static const char *const N_GLMODE[] = {"RATE", "TIME"};
@@ -80,6 +84,11 @@ static const param_desc_t TP[P_COUNT] = {
     [P_SLPAT] = PD("PAT", F_INT, 1, 16, 1),        /* SL_PAT[] */
     [P_SLRATE] = PE("RATE", N_SLDIV, 1),
     [P_SLDEPTH] = PD("DEPTH", F_PCT, 0, 127, 127),
+    /* Jangada: modulation matrix (mod.c). DST names follow the engine (track_desc) */
+    [P_M1SRC] = PE("SRC", N_MSRC, 0), [P_M1DST] = PE("DST", N_MDST, 0), [P_M1AMT] = PD("AMT", F_BIPCT, -64, 63, 0),
+    [P_M2SRC] = PE("SRC", N_MSRC, 0), [P_M2DST] = PE("DST", N_MDST, 0), [P_M2AMT] = PD("AMT", F_BIPCT, -64, 63, 0),
+    [P_M3SRC] = PE("SRC", N_MSRC, 0), [P_M3DST] = PE("DST", N_MDST, 0), [P_M3AMT] = PD("AMT", F_BIPCT, -64, 63, 0),
+    [P_M4SRC] = PE("SRC", N_MSRC, 0), [P_M4DST] = PE("DST", N_MDST, 0), [P_M4AMT] = PD("AMT", F_BIPCT, -64, 63, 0),
 };
 
 static const param_desc_t GP[G_COUNT] = {
@@ -114,11 +123,13 @@ static const param_desc_t GP[G_COUNT] = {
 
 static const param_desc_t *track_desc(const track_t *t, uint32_t id)
 {
-    if (id >= P_E0 && id <= P_E7) {                   /* the engine asked for (t->engine follows after a fade) */
+    if (id >= P_E0 && id < P_E0 + NEDIT) {            /* the engine asked for (t->engine follows after a fade) */
         const engine_t *e = ENGINES[t->eng_req % NENGINES];
         const param_desc_t *d = e->desc ? e->desc(t, id - P_E0) : 0;   /* a mode-dependent label / names */
         return d ? d : &e->edit[id - P_E0];
     }
+    if (id == P_M1DST || id == P_M2DST || id == P_M3DST || id == P_M4DST)
+        return mod_dst_desc(ENGINES[t->eng_req % NENGINES]);
     return &TP[id];
 }
 
@@ -247,6 +258,10 @@ static const page_t PAGES[] = {
     {"ENV DEST", FAM_ENV, SC_TRACK, GR_NONE, {P_ED_FLT, P_ED_PIT, P_ED_SHP, 0xFF}},   /* (P_ED_FX: nothing reads it) */
     {"LFO", FAM_LFO, SC_TRACK, GR_LFO, {P_LRATE, P_LWAVE, P_LPHASE, P_LFADE}},
     {"LFO DEST", FAM_LFO, SC_TRACK, GR_NONE, {P_LD_PIT, P_LD_FLT, P_LD_SHP, P_LD_AMP}},
+    {"MOD 1", FAM_LFO, SC_TRACK, GR_NONE, {P_M1SRC, P_M1DST, P_M1AMT, 0xFF}},   /* Jangada: matrix */
+    {"MOD 2", FAM_LFO, SC_TRACK, GR_NONE, {P_M2SRC, P_M2DST, P_M2AMT, 0xFF}},
+    {"MOD 3", FAM_LFO, SC_TRACK, GR_NONE, {P_M3SRC, P_M3DST, P_M3AMT, 0xFF}},
+    {"MOD 4", FAM_LFO, SC_TRACK, GR_NONE, {P_M4SRC, P_M4DST, P_M4AMT, 0xFF}},
     {"FX", FAM_FX, SC_TRACK, GR_FX, {P_DIST, P_CHOR, P_DLY, P_REV}},
     {"SLICER", FAM_FX, SC_TRACK, GR_SLCR, {P_SLCR, P_SLPAT, P_SLRATE, P_SLDEPTH}},   /* drum track too */
     {"DLY", FAM_FX, SC_GLOBAL, GR_NONE, {G_DTIME, G_DFDBK, G_DCOLOR, G_DMIX}},
@@ -254,6 +269,8 @@ static const page_t PAGES[] = {
     {"SCL", FAM_SCL, SC_TRACK, GR_SCALE, {P_ROOT, P_SCALE, P_QUANT, P_TRANS}},
     {"EDIT 1", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E0, P_E1, P_E2, P_E3}},
     {"EDIT 2", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E4, P_E5, P_E6, P_E7}},
+    {"EDIT 3", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E8, P_E9, P_E10, P_E11}},     /* Jangada: shown when the */
+    {"EDIT 4", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E12, P_E13, P_E14, P_E15}},   /* engine has them (page_used) */
     {"VOICE", FAM_EDIT, SC_TRACK, GR_NONE, {P_VOICE, P_GLIDE, P_GLMODE, P_PRIO}},
     {"VOICE 2", FAM_EDIT, SC_TRACK, GR_NONE, {P_ALLOC, P_DETUNE, P_PAN, P_MUTE}},
     {"GLOBAL", FAM_GLO, SC_GLOBAL, GR_NONE, {G_BPM, G_SWING, G_CLOCK, G_TUNE}},
@@ -280,6 +297,21 @@ static int page_for_drum(const page_t *pg)
     if (pg->scope == SC_GLOBAL)
         return pg->graph != GR_BROWSE && pg->graph != GR_USER;
     return pg->scope != SC_ENGINE && (pg->scope != SC_TRACK || pg->fam == FAM_SEQ || pg->graph == GR_SLCR);
+}
+
+/* Jangada: an EDIT page is shown only when the engine has a parameter on it (EDIT 3 / 4:
+ * engines with more than 8) */
+static int page_used(uint32_t pi)
+{
+    const page_t *pg = &PAGES[pi];
+    const engine_t *e = ENGINES[TSEL->eng_req % NENGINES];
+    uint32_t k;
+    if (pg->scope != SC_ENGINE)
+        return 1;
+    for (k = 0; k < 4u; k++)
+        if (pg->id[k] >= P_E0 && pg->id[k] < P_E0 + NEDIT && e->edit[pg->id[k] - P_E0].label)
+            return 1;
+    return 0;
 }
 
 static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **valp)

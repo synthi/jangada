@@ -54,7 +54,7 @@ int main(void)
 {
     uint8_t a[640];
     up_rec_t r, got;
-    uint32_t n, slot = 99, i;
+    uint32_t n, slot = 99, i, k;
     int bad = 0, len, ok;
     int16_t v[P_COUNT], def[P_COUNT];
     memset(nor, 0xFF, sizeof nor);
@@ -92,9 +92,7 @@ int main(void)
     /* bank round trip through storage.c */
     n = put_frame(a, 17, 3, "Keys", 7);
     up_parse(a, n, &r, &slot);
-    up_bank[1].magic = UP_BANK_MAGIC;
-    up_bank[1].rsize = sizeof(up_rec_t);
-    up_bank[1].nslot = UP_PER_BANK;
+    up_bank_fresh(&up_bank[1]);
     *up_rec(17) = r;
     bad += check("bank fits one object", sizeof(up_bank_t) <= ST_PAYLOAD_MAX);
     bad += check("bank save", st_save(OBJ_UPRESET0 + 1, &up_bank[1], sizeof up_bank[1]) == 0);
@@ -113,40 +111,82 @@ int main(void)
     up_bank[1].rsize = 190;                                 /* another record layout */
     up_bank_check(1, (int)sizeof up_bank[1]);
     bad += check("bank with another record size -> empty", !up_used(17));
-    up_bank[1].magic = UP_BANK_MAGIC;
-    up_bank[1].rsize = sizeof(up_rec_t);
-    up_bank[1].nslot = UP_PER_BANK;
+    up_bank_fresh(&up_bank[1]);
     *up_rec(17) = r;
     up_rec(17)->ver = UP_VER + 1u;
     bad += check("record with another version -> empty", !up_used(17));
 
-    /* map by count: a record from a build with 2 parameters fewer */
     for (i = 0; i < P_COUNT; i++)
         def[i] = (int16_t)(1000 + i);
-    r.np = P_COUNT - 2u;
-    for (i = 0; i < P_COUNT; i++)
-        r.p[i] = (int16_t)i;
-    up_params(&r, v, def);
-    ok = 1;
-    for (i = 0; i < P_E0; i++)
-        ok &= v[i] == (i < P_E0 - 2u ? (int16_t)i : def[i]);
-    for (i = 0; i < 8u; i++)
-        ok &= v[P_E0 + i] == (int16_t)(P_E0 - 2u + i);
-    bad += check("np < P_COUNT: mapped by count", ok);
-    /* a record saved before the SLICER (P_COUNT 53, P_E0 45): the four SLICER parameters (just
-     * before P_E0) take their defaults, everything else keeps its id */
-    r.np = 53;
-    for (i = 0; i < 53u; i++)
-        r.p[i] = (int16_t)(2000 + i);
-    up_params(&r, v, def);
-    ok = P_SLCR == 45 && P_SLDEPTH + 1 == P_E0 && P_E0 == 49;
-    for (i = 0; i < 45u; i++)
-        ok &= v[i] == (int16_t)(2000 + i);
-    for (i = P_SLCR; i <= P_SLDEPTH; i++)
-        ok &= v[i] == def[i];
-    for (i = 0; i < 8u; i++)
-        ok &= v[P_E0 + i] == (int16_t)(2000 + 45 + i);
-    bad += check("old record (np 53): SLICER defaults, E0..E7 kept", ok);
+    {   /* Felucca banks ("UPB1"): converted in place when loaded */
+        static up_bank_v1_t f;
+        static const uint32_t NP[2] = {57, 53};    /* Felucca 0.9 (SLICER), and before it */
+        uint32_t t;
+        for (t = 0; t < 2u; t++) {
+            uint32_t np = NP[t], nc = np - 8u;
+            memset(&f, 0, sizeof f);
+            f.magic = UP_V1_MAGIC;
+            f.rsize = sizeof(up_rec_v1_t);
+            f.nslot = UP_PER_BANK;
+            for (k = 0; k < UP_PER_BANK; k += 5u) {   /* slots 0, 5, 10, 15 */
+                up_rec_v1_t *o = &f.r[k];
+                o->used = UP_USED;
+                o->ver = 1;
+                o->engine = (uint8_t)(k % NENGINES);
+                o->np = (uint8_t)np;
+                memcpy(o->name, "OLD", 3);
+                for (i = 0; i < np; i++)
+                    o->p[i] = (int16_t)(2000 + 10 * k + i);
+                o->note[0] = 60;
+                o->flags[0] = SF_ACCENT;
+            }
+            memset(up_bank, 0, sizeof up_bank);
+            st_save(OBJ_UPRESET0, &f, sizeof f);
+            up_bank_check(0, st_load(OBJ_UPRESET0, &up_bank[0], sizeof up_bank[0]));
+            ok = up_bank[0].magic == UP_BANK_MAGIC && up_bank[0].np == P_COUNT;
+            for (k = 0; k < UP_PER_BANK; k++) {
+                if (k % 5u) {
+                    ok &= !up_used(k);
+                    continue;
+                }
+                ok &= up_used(k) && up_rec(k)->engine == k % NENGINES && !memcmp(up_rec(k)->name, "OLD", 4) &&
+                      up_rec(k)->note[0] == 60 && up_rec(k)->flags[0] == SF_ACCENT;
+                up_params(up_rec(k), v, def);
+                for (i = 0; i < nc; i++)                 /* P_LEVEL.. in order */
+                    ok &= v[i] == (int16_t)(2000 + 10 * k + i);
+                for (i = nc; i < P_E0; i++)              /* added since (SLICER, the matrix): defaults */
+                    ok &= v[i] == def[i];
+                for (i = 0; i < 8u; i++)                 /* the engine's 8 */
+                    ok &= v[P_E0 + i] == (int16_t)(2000 + 10 * k + nc + i);
+                for (i = 8u; i < NEDIT; i++)             /* E9..: defaults */
+                    ok &= v[P_E0 + i] == def[P_E0 + i];
+            }
+            bad += check(t ? "Felucca bank (np 53): converted, SLICER defaults" : "Felucca bank (np 57): converted, in place", ok);
+        }
+    }
+    {   /* a bank stored with other keys (a later build): mapped by key */
+        memset(up_bank, 0, sizeof up_bank);
+        up_bank_fresh(&up_bank[0]);
+        up_bank[0].np = 3;
+        up_bank[0].key[0] = P_KEY[P_E0];
+        up_bank[0].key[1] = P_KEY[P_LEVEL];
+        up_bank[0].key[2] = 120;                         /* a key this build does not know */
+        up_rec(2)->used = UP_USED;
+        up_rec(2)->ver = UP_VER;
+        up_rec(2)->engine = 1;
+        up_rec(2)->np = 3;
+        memcpy(up_rec(2)->name, "NEW", 3);
+        up_rec(2)->p[0] = 7;
+        up_rec(2)->p[1] = 8;
+        up_rec(2)->p[2] = 9;
+        up_bank_check(0, (int)sizeof up_bank[0]);
+        up_params(up_rec(2), v, def);
+        ok = up_used(2) && up_bank[0].np == P_COUNT && v[P_E0] == 7 && v[P_LEVEL] == 8;
+        for (i = 0; i < P_COUNT; i++)
+            if (i != P_E0 && i != P_LEVEL)
+                ok &= v[i] == def[i];
+        bad += check("other keys: mapped by key, unknown skipped", ok);
+    }
     r.np = P_COUNT;
     for (i = 0; i < P_COUNT; i++)
         r.p[i] = (int16_t)i;
