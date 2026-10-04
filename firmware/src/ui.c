@@ -3,7 +3,7 @@
 /* Felucca user interface. Four columns map to KNOB 1..4. Rendering is lazy:
  * every element remembers what it last drew and is redrawn only on change. */
 #ifndef FELUCCA_VERSION
-#define FELUCCA_VERSION "0.5 BETA"   /* build.py --beta X.Y passes its own */
+#define FELUCCA_VERSION "0.1 ALPHA"   /* build.py --beta X.Y passes its own */
 #endif
 static void project_save(uint32_t slot);
 static void panel_setup(void);
