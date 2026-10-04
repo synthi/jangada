@@ -169,6 +169,21 @@ def build_loader():
 
 # ---- app
 
+def build_date():
+    """the date shown in ABOUT, as __DATE__ prints it ("Oct  4 2026"), but reproducible:
+    SOURCE_DATE_EPOCH if set, else the date of the last commit, else today"""
+    import datetime, subprocess
+    ts = os.environ.get("SOURCE_DATE_EPOCH")
+    if not ts:
+        try:
+            ts = subprocess.run(["git", "-C", str(SRC), "log", "-1", "--format=%ct"], capture_output=True,
+                                text=True, check=True).stdout.strip()
+        except (OSError, subprocess.CalledProcessError):
+            ts = ""
+    d = datetime.datetime.fromtimestamp(int(ts), datetime.timezone.utc) if ts else datetime.datetime.now(datetime.timezone.utc)
+    return f"{d:%b} {d.day:2d} {d.year}"
+
+
 def build_app():
     flags = [*CFLAGS, "-Ifirmware/hal", "-Ifirmware/src", "-Ibuild/gen"]
     for flag in ("FELUCCA_FLASH", "FELUCCA_OTA", "FELUCCA_OTA_DRYRUN", "FELUCCA_CDC", "FELUCCA_UART",
@@ -177,6 +192,7 @@ def build_app():
         if v in ("0", "1"):
             flags.append(f"-D{flag}={v}")
     flags.append(f'-DFELUCCA_ID="{PRODUCT}"')
+    flags.append(f'-DFELUCCA_DATE="{build_date()}"')
     if VERSION:
         flags.append(f'-DFELUCCA_VERSION="{VERSION}"')
     tc_all(("cc", "-c", FW / "crt0.S", "-o", OUT / "crt0.o"),

@@ -2,6 +2,9 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Felucca user interface. Four columns map to KNOB 1..4. Rendering is lazy:
  * every element remembers what it last drew and is redrawn only on change. */
+#ifndef FELUCCA_DATE
+#define FELUCCA_DATE __DATE__          /* build.py passes a reproducible one */
+#endif
 #ifndef FELUCCA_VERSION
 #define FELUCCA_VERSION "0.1 ALPHA"   /* build.py --beta X.Y passes its own */
 #endif
