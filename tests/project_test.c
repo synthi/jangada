@@ -114,6 +114,8 @@ int main(void)
     /* a Felucca 0.9 project (FUN3: 57 values = keys 0..56) from this one (an engine added
      * since: SLICE, 8) */
     q.t[1].engine = 8;
+    for (i = 8u; i < NEDIT; i++)                       /* E9..: FUN3 has none: engine 8's defaults */
+        q.t[1].p[P_E0 + i] = PROJ_DEF;
     proj_fill(&q);
     q.sum = proj_sum(&q);
     memset(&v3, 0, sizeof v3);

@@ -271,10 +271,31 @@ static void con_color(const char *p)
     }
 }
 
+/* preset ENGINE INDEX [TRACK 1..3]: as the editor's PRESET (hardware tests: tools/fm1_console.py) */
+static void con_preset(const char *p)
+{
+    int ok1, ok2, ok3;
+    uint32_t e = con_num(&p, &ok1), pi = con_num(&p, &ok2), tr = con_num(&p, &ok3);
+    track_t *t;
+    if (!ok1 || !ok2 || e >= NENGINES || (ok3 && (tr < 1u || tr > NPART))) {
+        con_puts("usage: preset ENGINE INDEX [TRACK 1..3]\r\n");
+        return;
+    }
+    t = &trk[ok3 ? tr - 1u : song.sel < NPART ? song.sel : 0u];
+    if (e != t->eng_req)
+        set_engine_of(t, e);
+    apply_preset_to(t, pi);
+    ui.force = 1;
+    con_puts(ENGINES[e]->name);
+    con_putc(' ');
+    con_puts(ENGINES[e]->presets[t->preset].name);
+    con_puts("\r\n");
+}
+
 static void con_exec(const char *p)
 {
     if (con_word(&p, "help") || con_word(&p, "?"))
-        con_puts("status  dbg  crash  params  color [N|NAME]  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
+        con_puts("status  dbg  crash  params  color [N|NAME]  preset E I [T]  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
     else if (con_word(&p, "status"))
         con_status();
     else if (con_word(&p, "dbg"))
@@ -285,6 +306,8 @@ static void con_exec(const char *p)
         con_params();
     else if (con_word(&p, "color"))
         con_color(p);
+    else if (con_word(&p, "preset"))
+        con_preset(p);
     else if (con_word(&p, "memr"))
         con_memr(p);
 #if FELUCCA_FLASH
