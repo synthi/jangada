@@ -1053,7 +1053,7 @@ function makeMockDevice(opt = {}) {
     D("MIDI", F.ENUM, 0, 0, 0, ["--"]), D("SYNC", F.ENUM, 0, 0, 0, ["--"]), D("ROUT", F.ENUM, 0, 0, 0, ["--"]), D("CPU", F.INT, 0, 0, 0),
     D("SLOT", F.INT, 1, 4, 1), D("NAME", F.ENUM, 0, 0, 0, ["--"]), D("LOAD", F.ENUM, 0, 1, 0, ["--", "GO"]), D("SAVE", F.ENUM, 0, 1, 0, ["--", "GO"]),
     D("ENG", F.ENUM, 0, 8, 0, ["ANALOG", "DIGITAL", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN"]), D("SET", F.ENUM, 0, 1, 0, ["--", "GO"]), D("CLRSQ", F.ENUM, 0, 1, 0, ["--", "GO"]), D("INIT", F.ENUM, 0, 1, 0, ["--", "GO"]),
-    D("CH", F.INT, 0, 16, 10), D("LVL", F.INT, 0, 127, 100), D("REV", F.INT, 0, 127, 16),
+    D("CH", F.INT, 0, 16, 10), D("LVL", F.INT, 0, 127, 100), D("REV", F.INT, 0, 127, 16), D("T4", F.ENUM, 0, 1, 0, ["DRUM", "SYNTH"]),
   ];
   const P = (name, e, env = [10, 70, 90, 60], mono = 0, pat = 0) => ({ name, e, env, mono, pat });
   const ENG = [
@@ -1186,7 +1186,7 @@ function makeMockDevice(opt = {}) {
         P("GHOST KEYS", [0, 40, 110, 90, 0, 50, 20, 80, 0, 0, 0, 0, 0, 0, 0, 0], [90, 90, 120, 110], 0, 0),
         P("DRONE DUST", [2, 50, 100, 120, -12, 90, 70, 70, 0, 0, 0, 0, 0, 0, 0, 0], [110, 90, 127, 118], 0, 0)] },
   ];
-  const P_COUNT = 77, G_COUNT = 27, NSTEP = 64, P_E0 = 61, NEDIT = 16, G_ENGSEL = 20, P_SLCR = 45;
+  const P_COUNT = 77, G_COUNT = 28, NSTEP = 64, P_E0 = 61, NEDIT = 16, G_ENGSEL = 20, P_SLCR = 45;
   /* </generated> */
   /* factory PATTERNS[] (ui.c): absolute notes, 0 rest; flags 1 accent, 2 slide, 4 tie (holds the previous note) */
   const T_ = 4;
@@ -1868,7 +1868,7 @@ function selfLoad() {
 const stepEdit = new Map(); /* index -> time of the last edit */
 
 /* parameter ids (firmware/src/core.h); used only when P_COUNT / G_COUNT match */
-const EXPECT = { pcount: 77, gcount: 27, pe0: 61 };   /* tools/gen_editor_tables.py --check: == the firmware */
+const EXPECT = { pcount: 77, gcount: 28, pe0: 61 };   /* tools/gen_editor_tables.py --check: == the firmware */
 const P = { LEVEL: 0, SLEN: 29 };
 const LAYOUT = (pe0) => [
   { t: "ENV", pages: [["ENV", 0, [1, 2, 3, 4]], ["ENV DEST", 0, [5, 6, 7, 8]]] },

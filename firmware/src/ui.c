@@ -61,6 +61,7 @@ static struct {
     uint8_t arm, arm_t;          /* destructive action armed: param id, frames left to confirm */
     uint32_t rec_t0;             /* REC press time (btn_hold) */
     uint32_t arp_t0;             /* Jangada: ARP press time (btn_hold): held = DRONE OFF */
+    uint8_t t4;                  /* Jangada: G_T4 as last seen (t4_follow) */
     uint8_t confirm;             /* 1 = "clear the sequence?" (REC held on SEQ / ARP), 2 = "clear track n?" (TRACKS) */
     uint8_t confirm_trk;         /* the track the dialog clears */
     uint8_t uslot;               /* SAVE > USER: the selected user preset slot */
@@ -318,6 +319,33 @@ static void set_engine_of(track_t *t, uint32_t ei)
 }
 
 static void apply_preset(uint32_t pi) { apply_preset_to(TSEL, pi); }
+
+/* Jangada: GLO > DRUMS T4 changed (the knob, the editor): track 4 becomes a synth part with a
+ * sound of its own, or the drum track again. Its notes go; its synth voices stop at once (as
+ * the drum track nothing renders them). A loaded project sets ui.t4 itself: no reset then. */
+static void t4_follow(void)
+{
+    track_t *t = TDRUM;
+    uint32_t i;
+    if ((uint32_t)song.g[G_T4] == ui.t4)
+        return;
+    ui.t4 = (uint8_t)song.g[G_T4];
+    fm1_irq_off();
+    for (i = 0; i < NVOICE; i++)
+        t->v[i].active = t->v[i].gate = 0;
+    t->nheld = t->arp_phys = t->arp_note = t->arp_nch = t->seq_n = t->rat_left = 0;
+    t->nmono = t->mono_note = t->xp_n = 0;
+    fm1_irq_on();
+    if (ui.t4) {
+        set_engine_of(t, 6);                            /* TRIO, its first preset */
+        t->engine = t->eng_req;
+        ui_message("TRACK 4: SYNTH");
+    } else {
+        ui_message("TRACK 4: DRUMS");
+    }
+    sync_reload = 1;
+    ui.force = 1;
+}
 static void set_engine(uint32_t ei) { set_engine_of(TSEL, ei); }
 
 static void track_defaults(track_t *t)

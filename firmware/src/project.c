@@ -154,7 +154,7 @@ static void proj_fill(project_t *q)
 {
     uint32_t i, k;
     for (i = 0; i < NTRK; i++) {
-        uint32_t e = i < NPART ? q->t[i].engine % NENGINES : 0u;
+        uint32_t e = i <= TRK_DRUM ? q->t[i].engine % NENGINES : 0u;
         for (k = 0; k < P_COUNT; k++)
             if (q->t[i].p[k] == PROJ_DEF)
                 q->t[i].p[k] = k >= P_E0 && k < P_E0 + NEDIT ? ENGINES[e]->edit[k - P_E0].def : TP[k].def;
@@ -336,7 +336,7 @@ static void project_load(uint32_t slot)
     for (k = 0; k < NTRK; k++) {
         track_t *t = &trk[k];
         const proj_trk_t *s = &p->t[k];
-        uint32_t e = k < NPART ? s->engine % NENGINES : 0u;
+        uint32_t e = trk_synth(k) ? s->engine % NENGINES : 0u;   /* (globals, G_T4 too, are loaded above) */
         t->eng_req = (uint8_t)e;
         t->user = 0;                                    /* (no user preset slot is saved) */
         for (i = 0; i < P_COUNT; i++) {                 /* every value back inside its range */
@@ -357,6 +357,7 @@ static void project_load(uint32_t slot)
         }
     }
     song.sel = (uint8_t)(p->sel < NTRK ? p->sel : 0u);
+    ui.t4 = (uint8_t)song.g[G_T4];                     /* Jangada: the project's track 4, as stored */
     fm1_irq_on();
     for (k = 0; k < NPART; k++)                         /* a format 1 project: the default sounds of tracks 2, 3 */
         if (p->t[k].preset == 0xFFu) {

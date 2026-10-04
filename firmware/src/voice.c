@@ -58,8 +58,8 @@ static uint32_t trk_nvoice(const track_t *t)
 static uint32_t voices_busy(void)                       /* sounding voices of all parts (not the fading ones) */
 {
     uint32_t p, i, n = 0;
-    for (p = 0; p < NPART; p++)
-        for (i = 0; i < NVOICE; i++)
+    for (p = 0; p < NTRK; p++)
+        for (i = 0; i < NVOICE && trk_synth(p); i++)
             n += trk[p].v[i].active && trk[p].v[i].stage != 4u;
     return n;
 }
@@ -78,9 +78,11 @@ static uint32_t lowest_held(const track_t *t)           /* index of the lowest h
 static uint32_t voice_victim(const track_t *self, int soft, track_t **pp)
 {
     uint32_t p, i, best = NVOICE, cat = 4;
-    for (p = 0; p < NPART; p++) {
+    for (p = 0; p < NTRK; p++) {
         track_t *t = &trk[p];
         uint32_t mode = (uint32_t)t->p[P_VOICE], nu = mode == V_UNISON ? trk_nvoice(t) : 1u;
+        if (!trk_synth(p))
+            continue;
         uint32_t low = mode == V_POLY ? lowest_held(t) : NVOICE;
         if (soft && t == self)
             continue;

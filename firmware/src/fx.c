@@ -219,9 +219,13 @@ static void mix_block(int32_t *out, uint32_t n)
     for (i = 0; i < n; i++)
         send_c[i] = send_d[i] = send_r[i] = mix_l[i] = mix_r[i] = 0;
     events_block(n);
-    for (i = 0; i < NPART; i++)
-        mix_part(&trk[i], n);
-    slicer_drums(mix_l, mix_r, send_r, n);              /* drums_render, through the SLICER when on */
+    for (i = 0; i < NTRK; i++)
+        if (trk_synth(i))
+            mix_part(&trk[i], n);
+    if (is_drum(TDRUM))
+        slicer_drums(mix_l, mix_r, send_r, n);          /* drums_render, through the SLICER when on */
+    else
+        drums_render(mix_l, mix_r, send_r, n);          /* track 4 is a synth: only the drums' tails */
     fx_buses(send_c, send_d, send_r, wet, n);
     for (i = 0; i < n; i++) {
         int32_t l = (((mix_l[i] + wet[i]) >> 2) * (int32_t)song.master_q12) >> 10;

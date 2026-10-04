@@ -99,8 +99,8 @@ int main(void)
     ok = proj_import(&q, &buf, (int)sizeof v2);
     bad += check("FUN2 -> FUN3: converted, valid format 3 slot", ok && proj_ok(&q) && q.magic == PROJ_MAGIC);
     ok = q.sel == 2;
-    for (i = 0; i < G_COUNT; i++)
-        ok &= q.g[i] == (int16_t)(500 + i);
+    for (i = 0; i < G_COUNT; i++)                      /* globals added since (G_T4): their defaults */
+        ok &= q.g[i] == (i < PROJ_NG_V2 ? (int16_t)(500 + i) : GP[i].def);
     bad += check("FUN2 -> FUN3: globals and selected track", ok);
     ok = 1;
     for (t = 0; t < NTRK; t++)
@@ -143,6 +143,13 @@ int main(void)
         q.t[0].p[P_E0 + 12] = 5;
         q.sum = proj_sum(&q);
         n = proj_to_jng(&q, buf.jng);
+        q.g[G_T4] = 1;                                 /* track 4 as a synth: its engine, kept */
+        q.t[TRK_DRUM].engine = 6;
+        q.t[TRK_DRUM].preset = 2;
+        q.sum = proj_sum(&q);
+        n = proj_to_jng(&q, buf.jng);
+        bad += check("JNG1: T4 SYNTH with its engine / preset", proj_import(&q2, buf.jng, (int)n) && q2.g[G_T4] == 1 &&
+                                                                q2.t[TRK_DRUM].engine == 6 && q2.t[TRK_DRUM].preset == 2);
         bad += check("JNG1 -> today: as stored", n == JNG_SIZE(P_COUNT, G_COUNT) &&
                                                      proj_import(&q2, buf.jng, (int)n) && !memcmp(&q, &q2, sizeof q));
         buf.jng[JNG_HDR + P_LEVEL] = 120;              /* a key this build does not know, instead of LEVEL's */

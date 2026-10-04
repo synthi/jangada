@@ -46,8 +46,8 @@ static void shed_voice(void)
 {
     uint32_t p, i, ngate = 0;
     voice_t *best = 0;
-    for (p = 0; p < NPART; p++)
-        for (i = 0; i < NVOICE; i++) {
+    for (p = 0; p < NTRK; p++)
+        for (i = 0; i < NVOICE && trk_synth(p); i++) {
             voice_t *v = &trk[p].v[i];
             if (v->active && !v->gate && v->stage != 4u && (!best || v->env < best->env))
                 best = v;
@@ -57,8 +57,8 @@ static void shed_voice(void)
         shed_count++;
         return;
     }
-    for (p = 0; p < NPART; p++)
-        for (i = 0; i < NVOICE; i++) {
+    for (p = 0; p < NTRK; p++)
+        for (i = 0; i < NVOICE && trk_synth(p); i++) {
             voice_t *v = &trk[p].v[i];
             if (v->active && v->gate) {
                 ngate++;

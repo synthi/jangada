@@ -69,6 +69,7 @@ enum {                          /* global parameters */
     G_ENGSEL, G_ENGGO,          /* no page (the ENGINE page is gone); a SET of G_ENGSEL switches the engine (editor) */
     G_CLRSEQ, G_INITSND,
     G_DRCH, G_DRLVL, G_DRREV,
+    G_T4,                       /* Jangada: track 4 is the GM drum track (0) or a fourth synth part (1) */
     G_COUNT
 };
 
@@ -234,7 +235,9 @@ static track_t trk[NTRK];        /* the instrument: three parts and the drum tra
 static song_t song;
 #define TSEL (&trk[song.sel])    /* the selected track */
 #define TDRUM (&trk[TRK_DRUM])
-static int is_drum(const track_t *t) { return t == TDRUM; }
+static int is_drum(const track_t *t) { return t == TDRUM && !song.g[G_T4]; }
+/* Jangada: track i plays an engine (tracks 1..3 always, track 4 when GLO > DRUMS T4 is SYNTH) */
+static int trk_synth(uint32_t i) { return i < NPART || (i == TRK_DRUM && song.g[G_T4]); }
 #define RING_PUBLISH() __asm__ volatile("" ::: "memory")   /* slot store before the index update */
 static volatile uint32_t fm1_ms;  /* milliseconds since boot (TIMER4-based, TIMER5 ISR in main.c) */
 /* boot-loop guard (main.c): two boots in a row that die in the first 30 s -> UBOOT */

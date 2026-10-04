@@ -291,16 +291,17 @@ static void ui_input(void)
     uint32_t rec = btn_hold(&ui.rec_t0, B_REC, now, !ui.menu && (fam == FAM_SEQ || fam == FAM_ARP || fam == FAM_TRK));
     uint32_t arp = btn_hold(&ui.arp_t0, B_ARP, now, !ui.menu);
     int32_t s;
+    t4_follow();
     if (arp == BT_HOLD) {                               /* Jangada: ARP held: every latched (HOLD) chord off */
         uint32_t i, any = 0;
-        for (i = 0; i < NPART; i++)
-            if (trk[i].p[P_AHOLD] && trk[i].nheld && !trk[i].arp_phys)
+        for (i = 0; i < NTRK; i++)
+            if (trk_synth(i) && trk[i].p[P_AHOLD] && trk[i].nheld && !trk[i].arp_phys)
                 any |= 1u << i;
         if (any) {
             latch_off_req |= (uint8_t)any;
             ui_message("DRONE OFF");                    /* it fades with its release; */
         } else {
-            for (i = 0; i < NPART; i++)                 /* held again: the tails stop now */
+            for (i = 0; i < NTRK && trk_synth(i); i++)  /* held again: the tails stop now */
                 for (k = 0; k < NVOICE; k++)
                     if (trk[i].v[k].active && !trk[i].v[k].gate)
                         any |= 1u << i;

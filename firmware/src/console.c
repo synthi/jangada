@@ -277,11 +277,11 @@ static void con_preset(const char *p)
     int ok1, ok2, ok3;
     uint32_t e = con_num(&p, &ok1), pi = con_num(&p, &ok2), tr = con_num(&p, &ok3);
     track_t *t;
-    if (!ok1 || !ok2 || e >= NENGINES || (ok3 && (tr < 1u || tr > NPART))) {
-        con_puts("usage: preset ENGINE INDEX [TRACK 1..3]\r\n");
+    if (!ok1 || !ok2 || e >= NENGINES || (ok3 && (tr < 1u || tr > NTRK || !trk_synth(tr - 1u)))) {
+        con_puts("usage: preset ENGINE INDEX [TRACK 1..3, 4 when T4 is SYNTH]\r\n");
         return;
     }
-    t = &trk[ok3 ? tr - 1u : song.sel < NPART ? song.sel : 0u];
+    t = &trk[ok3 ? tr - 1u : trk_synth(song.sel) ? song.sel : 0u];
     if (e != t->eng_req)
         set_engine_of(t, e);
     apply_preset_to(t, pi);
@@ -292,10 +292,53 @@ static void con_preset(const char *p)
     con_puts("\r\n");
 }
 
+/* t4 [drum | synth]: GLO > DRUMS T4, as the knob (ui.c t4_follow does the rest) */
+static void con_t4(const char *p)
+{
+    if (con_word(&p, "synth"))
+        song.g[G_T4] = 1;
+    else if (con_word(&p, "drum"))
+        song.g[G_T4] = 0;
+    else if (*p)
+        con_puts("usage: t4 [drum | synth]\r\n");
+    con_puts(song.g[G_T4] ? "track 4: synth\r\n" : "track 4: drum\r\n");
+}
+
+/* voices: per track what sounds and why (latched chords, arp, sequencer): hardware checks */
+static void con_voices(void)
+{
+    uint32_t i, k;
+    for (i = 0; i < NTRK; i++) {
+        const track_t *t = &trk[i];
+        uint32_t a = 0, g = 0;
+        for (k = 0; k < NVOICE; k++) {
+            a += t->v[k].active;
+            g += t->v[k].active && t->v[k].gate;
+        }
+        con_puts("track ");
+        con_dec((int32_t)i + 1);
+        con_puts(is_drum(t) ? " drum" : " synth");
+        con_puts(" active ");
+        con_dec((int32_t)a);
+        con_puts(" gate ");
+        con_dec((int32_t)g);
+        con_puts(" held ");
+        con_dec(t->nheld);
+        con_puts(" keys ");
+        con_dec(t->arp_phys);
+        con_puts(" arp ");
+        con_dec(t->p[P_AMODE]);
+        con_puts(" hold ");
+        con_dec(t->p[P_AHOLD]);
+        con_puts("\r\n");
+    }
+    con_kv("playing", song.playing);
+}
+
 static void con_exec(const char *p)
 {
     if (con_word(&p, "help") || con_word(&p, "?"))
-        con_puts("status  dbg  crash  params  color [N|NAME]  preset E I [T]  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
+        con_puts("status  dbg  crash  params  color [N|NAME]  preset E I [T]  t4 [drum|synth]  voices  droneoff  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
     else if (con_word(&p, "status"))
         con_status();
     else if (con_word(&p, "dbg"))
@@ -308,6 +351,14 @@ static void con_exec(const char *p)
         con_color(p);
     else if (con_word(&p, "preset"))
         con_preset(p);
+    else if (con_word(&p, "t4"))
+        con_t4(p);
+    else if (con_word(&p, "voices"))
+        con_voices();
+    else if (con_word(&p, "droneoff")) {               /* as ARP held: latched chords off */
+        latch_off_req = (uint8_t)((1u << NTRK) - 1u);
+        con_puts("drone off\r\n");
+    }
     else if (con_word(&p, "memr"))
         con_memr(p);
 #if FELUCCA_FLASH
