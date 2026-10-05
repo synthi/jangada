@@ -459,7 +459,8 @@ static void ep1_rx(void)
             uint32_t k, nb = cin == 4u || cin == 7u ? 3u : cin == 6u ? 2u : 1u;
             for (k = 0; k < nb; k++)
                 sysex_byte(ep1rx[i + 1 + k]);
-        } else if (cin >= 8u && cin <= 0xEu && mi_w - mi_r < MQ) {
+        } else if (((cin >= 8u && cin <= 0xEu) || (cin == 0xFu && ep1rx[i + 1] >= 0xF8u)) && mi_w - mi_r < MQ) {
+            /* (Jangada: CIN F with F8..FF = real time: the clock, start, continue, stop) */
             midi_in_q[mi_w % MQ] = pkt;
             RING_PUBLISH();
             mi_w++;

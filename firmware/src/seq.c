@@ -368,6 +368,7 @@ static void rec_release(track_t *t, uint32_t note)
 
 static void input_on(track_t *t, uint32_t note, uint32_t vel)
 {
+    t->sus_held[(note >> 5) & 3u] &= ~(1u << (note & 31u));   /* (pressed again: its own key-up ends it) */
     last_note = (uint8_t)note;
     if (((song.rec >> trk_index(t)) & 1u) && song.playing)
         rec_note(t, note, vel);
@@ -379,6 +380,10 @@ static void input_on(track_t *t, uint32_t note, uint32_t vel)
 
 static void input_off(track_t *t, uint32_t note)
 {
+    if (t->sus && !is_drum(t)) {                    /* Jangada: the sustain pedal holds it (midi_cc) */
+        t->sus_held[(note >> 5) & 3u] |= 1u << (note & 31u);
+        return;
+    }
     rec_release(t, note);
     arp_remove(t, note);                            /* both: the note may have started in the */
     trk_note_off(t, note);                          /* other mode (ARP switched while held) */
@@ -475,6 +480,9 @@ static void keyboard_block(void)
     kb_prev = cur;
 }
 
+static void midi_rt_out(uint32_t b);                /* Jangada: MIDI clock out (below) */
+static uint32_t mclk_out;
+
 /* -------------------------------------------------------- sequencer --- */
 static void seq_start(void)
 {
@@ -489,6 +497,9 @@ static void seq_start(void)
     song.tick = 0;
     clk_pos = 0;                                   /* fx.c: the beat clock, step 0 on the beat */
     clk_beat = 0;
+    mclk_out = 0;
+    if (song.g[G_SYNC] == 1 && song.g[G_CLOCK] != 1)
+        midi_rt_out(0xFAu);                        /* Jangada: MIDI START (SYNC OUT) */
     song.playing = 1;
     slicer_start();                                /* slicer.c: its step 0 with the sequencer's */
 }
@@ -506,6 +517,8 @@ static void seq_release(track_t *t)
 static void seq_stop(void)
 {
     uint32_t i;
+    if (song.playing && song.g[G_SYNC] == 1 && song.g[G_CLOCK] != 1)
+        midi_rt_out(0xFCu);                        /* Jangada: MIDI STOP (SYNC OUT) */
     song.playing = 0;
     for (i = 0; i < NTRK; i++) {
         seq_release(&trk[i]);
@@ -660,6 +673,95 @@ static track_t *midi_route(uint32_t ch, uint32_t note, int on)
     return t;
 }
 
+/* ---- Jangada: MIDI beyond notes. Controllers of a channel go to the track it plays (midi_track) */
+static void sustain_release(track_t *t)             /* the pedal up: the notes it held are let go */
+{
+    uint32_t w, b;
+    t->sus = 0;
+    for (w = 0; w < 4u; w++)
+        for (b = 0; b < 32u; b++)
+            if ((t->sus_held[w] >> b) & 1u)
+                input_off(t, w * 32u + b);
+    t->sus_held[0] = t->sus_held[1] = t->sus_held[2] = t->sus_held[3] = 0;
+}
+
+static void midi_cc(track_t *t, uint32_t cc, uint32_t v)
+{
+    switch (cc) {
+    case 1:                                         /* MOD WHEEL (mod.c MODW) */
+        t->mw = (uint8_t)v;
+        break;
+    case 11:                                        /* EXPRESSION (mod.c EXPR) */
+        t->ex = (uint8_t)v;
+        break;
+    case 64:                                        /* SUSTAIN */
+        if (v >= 64u)
+            t->sus = 1;
+        else if (t->sus)
+            sustain_release(t);
+        break;
+    case 121:                                       /* RESET ALL CONTROLLERS */
+        t->bend16 = 0;
+        t->mw = t->at = t->ex = 0;
+        if (t->sus)
+            sustain_release(t);
+        break;
+    case 120:                                       /* ALL SOUND OFF, ALL NOTES OFF: the track goes quiet */
+    case 123:
+        t->sus = 0;
+        t->sus_held[0] = t->sus_held[1] = t->sus_held[2] = t->sus_held[3] = 0;
+        panic_req |= (uint8_t)(1u << trk_index(t));
+        break;
+    default:
+        break;
+    }
+}
+
+/* MIDI clock in (GLO > GLOBAL CLK USB): the tempo of the last beat (24 clocks), measured every 6;
+ * START / CONTINUE / STOP drive the transport. Out (GLO > SYSTEM SYNC OUT): 24 clocks a beat from
+ * the beat clock (fx.c clk_pos), START / STOP with the transport; never while following one */
+static uint32_t midi_now;                           /* samples since boot (block resolution) */
+static uint32_t mclk_t[25], mclk_n, mclk_out;
+
+static void midi_clock_in(uint32_t b)
+{
+    if (song.g[G_CLOCK] != 1)
+        return;
+    if (b == 0xF8u) {
+        uint32_t span;
+        mclk_t[mclk_n % 25u] = midi_now;
+        mclk_n++;
+        if (mclk_n >= 25u && !(mclk_n % 6u)) {
+            span = midi_now - mclk_t[(mclk_n - 25u) % 25u];   /* 24 clocks = one beat */
+            if (span)
+                song.g[G_BPM] = (int16_t)clamp((int32_t)((60u * FS + span / 2u) / span), GP[G_BPM].min, GP[G_BPM].max);
+        }
+    } else if (b == 0xFAu) {
+        mclk_n = 0;
+        transport_req = 1;
+    } else if (b == 0xFBu) {
+        if (!song.playing)
+            transport_req = 1;
+    } else if (b == 0xFCu) {
+        transport_req = 2;
+    }
+}
+
+static void midi_rt_out(uint32_t b) { midi_out_event(0x0Fu | b << 8); }
+
+static void midi_clock_out(void)                    /* after the beat clock moved */
+{
+    uint32_t want;
+    if (song.g[G_SYNC] != 1 || song.g[G_CLOCK] == 1 || !song.playing)
+        return;
+    want = clk_beat * 24u + clk_pos / (BEAT_U / 24u) + 1u;   /* the clocks due, the first one at step 0 */
+    while (mclk_out < want && want - mclk_out < 8u) {
+        midi_rt_out(0xF8u);
+        mclk_out++;
+    }
+    mclk_out = want;
+}
+
 /* everything that happens between two rendered blocks */
 static void events_block(uint32_t n)
 {
@@ -722,11 +824,22 @@ static void events_block(uint32_t n)
         d1 = (pkt >> 16) & 0x7Fu;
         d2 = (pkt >> 24) & 0x7Fu;
         mi_r++;
+        if ((pkt & 0x0Fu) == 0x0Fu) {                  /* (Jangada: real time, the byte is the status) */
+            midi_clock_in((pkt >> 8) & 0xFFu);
+            continue;
+        }
         if (st == 0x90u && d2)
             input_on(midi_route(ch, d1, 1), d1, d2);
         else if (st == 0x80u || st == 0x90u)
             input_off(midi_route(ch, d1, 0), d1);
+        else if (st == 0xE0u)                         /* Jangada: PITCH BEND, +-2 semitones */
+            midi_track(ch)->bend16 = (int16_t)((((int32_t)(d2 << 7 | d1) - 8192) * 32) / 8192);
+        else if (st == 0xB0u)
+            midi_cc(midi_track(ch), d1, d2);
+        else if (st == 0xD0u)                         /* channel AFTERTOUCH (mod.c AT) */
+            midi_track(ch)->at = (uint8_t)d1;
     }
+    midi_now += n;
     for (i = 0; i < NTRK; i++)
         seq_tick(&trk[i], n);
     for (i = 0; i < NTRK; i++)
@@ -739,5 +852,6 @@ static void events_block(uint32_t n)
             clk_pos -= BEAT_U;
             clk_beat++;
         }
+        midi_clock_out();
     }
 }

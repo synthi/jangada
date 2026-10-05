@@ -217,6 +217,12 @@ typedef struct track {
     int32_t dist_hp, dist_lp1, dist_lp2;   /* DIST insert state (fx.c) */
     uint8_t tail;                /* blocks to mix after the last voice (the DIST tail) */
     int16_t armp, aholdp;        /* P_AMODE / P_AHOLD as last seen by the ISR */
+    /* Jangada: MIDI controllers of the track's channel (seq.c midi_cc): pitch bend in 1/16 semitones
+     * (+-2 st), MOD WHEEL / AFTERTOUCH / EXPRESSION 0..127 (mod.c sources), the sustain pedal and the
+     * notes it holds */
+    int16_t bend16;
+    uint8_t mw, at, ex, sus;
+    uint32_t sus_held[4];
     /* engine switch (voice.c engine_block): the old engine's voices fade out, then it switches */
     uint8_t xf_on, xf;           /* fading; blocks of the fade still to render */
     int16_t pe_old[NEDIT];       /* P_E0.. of the sounding engine: the fade renders with these */

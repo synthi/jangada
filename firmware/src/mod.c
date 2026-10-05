@@ -12,7 +12,7 @@
  * it renders; values an engine only reads at note-on are not modulated.
  *
  * With every SRC at OFF nothing here runs, and the sound is Felucca's to the sample. */
-enum { MS_OFF, MS_LFO, MS_ENV, MS_VEL, MS_KEY, MS_RND };
+enum { MS_OFF, MS_LFO, MS_ENV, MS_VEL, MS_KEY, MS_RND, MS_MODW, MS_AT, MS_EXPR };   /* (MIDI: appended) */
 enum { MD_FLT, MD_PIT, MD_SHP, MD_E0 };
 
 /* DST names follow the engine: E1.. become its labels */
@@ -50,7 +50,7 @@ __attribute__((noinline)) static int mod_active(const track_t *t)
     return 0;
 }
 
-static int32_t mod_src(const voice_t *v, uint32_t src, int32_t lfo, int32_t env)
+static int32_t mod_src(const track_t *t, const voice_t *v, uint32_t src, int32_t lfo, int32_t env)
 {
     switch (src) {
     case MS_LFO:
@@ -63,6 +63,12 @@ static int32_t mod_src(const voice_t *v, uint32_t src, int32_t lfo, int32_t env)
         return clamp((v->pitch16 - 60 * 16) * 32767 / (48 * 16), -32767, 32767);
     case MS_RND:
         return v->rnd;
+    case MS_MODW:                                      /* Jangada: MIDI CC1, aftertouch, CC11 (0..1) */
+        return (int32_t)t->mw * 258;
+    case MS_AT:
+        return (int32_t)t->at * 258;
+    case MS_EXPR:
+        return (int32_t)t->ex * 258;
     }
     return 0;
 }
@@ -82,7 +88,7 @@ __attribute__((noinline)) static uint32_t mod_voice(track_t *t, const engine_t *
         int32_t amt = t->p[P_M1AMT + 3u * k], s;
         if (!src || !amt)
             continue;
-        s = mod_src(v, src, lfo, env);
+        s = mod_src(t, v, src, lfo, env);
         if (dst == MD_FLT)
             d[0] += (s * amt) >> 7;
         else if (dst == MD_PIT)

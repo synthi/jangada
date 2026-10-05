@@ -533,7 +533,8 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
         {
             int32_t md[3] = {0, 0, 0};
             uint32_t moved = mods ? mod_voice(t, e, v, lfo, m.envq15, md, keep) : 0;
-            pitch = v->pitch_cur + tune + ((lfo * p[P_LD_PIT] * 3) >> 15) + ((m.envq15 * p[P_ED_PIT] * 3) >> 15) + md[1];
+            pitch = v->pitch_cur + tune + ((lfo * p[P_LD_PIT] * 3) >> 15) + ((m.envq15 * p[P_ED_PIT] * 3) >> 15) + md[1] +
+                    t->bend16;                          /* (Jangada: MIDI pitch bend) */
             m.pitch16 = clamp(pitch, 0, 2047);
             m.inc = PITCH_INC[m.pitch16];
             if (v->fine + tune_fine)                        /* unison detune and fine tune, below 1/16 st */
