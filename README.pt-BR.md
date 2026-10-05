@@ -104,6 +104,10 @@ por trilha com o som, o motor, os passos e o playhead, o nível e os selos REC /
 - **GLO → GLOBAL CLK USB**: segue o clock do computador (tempo, start, stop).
 - **GLO → SYSTEM SYNC OUT**: manda clock pelo USB (24 por batida, start, stop).
 
+### Áudio por USB
+O FM-1 aparece no computador como uma entrada de áudio estéreo (44,1 kHz, "Felucca"), sem driver:
+grave o master direto na DAW (no Linux: `arecord -D hw:Felucca -f S16_LE -r 44100 -c 2 take.wav`).
+
 ### Memória e segurança
 - **Autosave**: parado e sem mexer por alguns segundos, o projeto vai para a flash e volta ao ligar.
   **OCT+** segurado ao ligar começa vazio; **HOME → NEW PROJECT** zera tudo.
@@ -172,7 +176,6 @@ sh tests/run_tests.sh         # todos os testes, no PC
 
 ## Próximos passos
 
-- Áudio por USB (o FM-1 como entrada de áudio no computador).
 - Uma revisão da interface, para legibilidade (a fonte suavizada do Felucca 1.0).
 - Editor de patches FM6 no editor web; backup de presets em `.syx`.
 
