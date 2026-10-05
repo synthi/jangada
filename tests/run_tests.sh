@@ -55,6 +55,8 @@ $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/punch_test" tests/punch_test.c -l
 run "master: punch-in FX, DUST, DUCK, FILT (Jangada, after SLOOP)" "$OUT/punch_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/chord_test" tests/chord_test.c -lm
 run "chords: one key, a chord of the scale (Jangada, after SLOOP)" "$OUT/chord_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/drumkit_test" tests/drumkit_test.c -lm
+run "drum kits: synthesised, every GM note (Jangada, after SLOOP)" "$OUT/drumkit_test"
 $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/layers_test" tests/layers_test.c -lm
 run "layers: SEQ steps and tools, undo, ENGINE, screens (Jangada)" "$OUT/layers_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/kit_test" tests/kit_test.c -lm

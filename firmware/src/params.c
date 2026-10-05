@@ -22,6 +22,7 @@ static const char *const N_ALLOC[] = {"ROT", "REUSE"};
 static const char *const N_ORDER[] = {"NOTE", "PLAY"};
 static const char *const N_CLOCK[] = {"INT"};
 static const char *const N_CHORD[] = {"OFF", "TRIAD", "7TH", "9TH", "SUS4", "POWER"};   /* seq.c CHORD_DEG (Jangada) */
+static const char *const N_KIT[] = {"GM", DS_KIT_NAME_LIST};   /* drums.c DRUM_KIT_NAMES (Jangada) */
 static const char *const N_NOTE[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 static const char *const N_DASH[] = {"--"};
 static const char *const N_GO[] = {"--", "GO"};
@@ -126,6 +127,7 @@ static const param_desc_t GP[G_COUNT] = {
     [G_DUST] = PD("DUST", F_PCT, 0, 127, 0),           /* Jangada: the master bus (fx.c) */
     [G_DUCK] = PD("DUCK", F_PCT, 0, 127, 0),
     [G_FILT] = PD("FILT", F_BIPCT, -64, 63, 0),
+    [G_KIT] = PE("KIT", N_KIT, 0),                     /* Jangada: the drum track's kit */
 };
 
 static const param_desc_t *track_desc(const track_t *t, uint32_t id)
@@ -284,7 +286,8 @@ static const page_t PAGES[] = {
     {"GLOBAL", FAM_GLO, SC_GLOBAL, GR_NONE, {G_BPM, G_SWING, G_CLOCK, G_TUNE}},
     {"SYSTEM", FAM_GLO, SC_GLOBAL, GR_NONE, {G_MIDI, G_SYNC, G_ROUTE, G_INFO}},
     {"DRUMS", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DRCH, G_DRLVL, G_DRREV, G_T4}},   /* GM kit on MIDI ch 10; T4: Jangada */
-    {"MASTER", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DUST, G_DUCK, G_FILT, 0xFF}},    /* Jangada: the master bus (fx.c) */
+    {"MASTER", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DUST, G_DUCK, G_FILT, 0xFF}},
+    {"KIT", FAM_GLO, SC_GLOBAL, GR_NONE, {G_KIT, G_DRLVL, G_DRREV, 0xFF}},   /* Jangada: the drum kit */    /* Jangada: the master bus (fx.c) */
     {"PRESETS", FAM_SAVE, SC_GLOBAL, GR_BROWSE, {0xFF, 0xFF, 0xFF, 0xFF}},   /* browser: PRESETS knob / KNOB 1 */
     {"USER", FAM_SAVE, SC_GLOBAL, GR_USER, {0xFF, 0xFF, 0xFF, 0xFF}},       /* user presets: SLOT LOAD ERASE SAVE */
     {"PROJECT", FAM_SAVE, SC_GLOBAL, GR_SLOTS, {G_SLOT, 0xFF, G_LOAD, G_SAVE}},

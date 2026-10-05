@@ -435,7 +435,11 @@ static void ui_input(void)
          * page and TRACKS only (the drum track: nothing):
          * elsewhere a stray turn would throw away the sound being edited */
         uint32_t total, cur = preset_pos(&total);
-        if (total)
+        if (is_drum(TSEL)) {                        /* Jangada: the drum track browses the kits */
+            song.g[G_KIT] = (int16_t)((drum_kit() + (s > 0 ? 1u : DRUM_KITS - 1u)) % DRUM_KITS);
+            ui_say("KIT ", DRUM_KIT_NAMES[drum_kit()]);
+            ui.force = 1;
+        } else if (total)
             preset_go((cur + (s > 0 ? 1u : total - 1u)) % total);   /* past the factory ones: user presets */
     }
     if ((s = panel_enc(EN_ALGO)) != 0)             /* ALGORITHM: the selected track, on every page */

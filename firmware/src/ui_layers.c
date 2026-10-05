@@ -904,7 +904,7 @@ static void tracks_row(uint32_t c)
     uint32_t ph = song.playing && t->seq_idx / 16u == page ? t->seq_idx % 16u : 99u;
     int32_t y0 = 42 + (int32_t)c * 35;
     char name[16];
-    const char *eng = is_drum(t) ? "GM KIT" : ENGINES[t->eng_req % NENGINES]->name;
+    const char *eng = is_drum(t) ? DRUM_KIT_STYLES[drum_kit()] : ENGINES[t->eng_req % NENGINES]->name;
     trk_short_name(c, name);
     for (i = 0; i < 16u; i++)
         if (page * 16u + i < len && step_on(&t->step[page * 16u + i]))

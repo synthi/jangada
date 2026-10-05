@@ -7,6 +7,11 @@
  * pedal hi-hat chokes the open one. LEVEL / REV: GLO > DRUMS (G_DRLVL, G_DRREV);
  * PAN and MUTE: the drum track's P_PAN / P_MUTE. Rendered from the audio ISR. */
 #define NDRUM 6
+#include "drum_synth.c"       /* Jangada: the synthesised kits (after SLOOP); G_KIT > 0 plays them */
+#define DRUM_KITS (1u + DS_NKITS)
+static const char *const DRUM_KIT_NAMES[DRUM_KITS] = {"GM", DS_KIT_NAME_LIST};
+static const char *const DRUM_KIT_STYLES[DRUM_KITS] = {"GM KIT", DS_KIT_STYLE_LIST};
+static uint32_t drum_kit(void) { return (uint32_t)clamp(song.g[G_KIT], 0, DRUM_KITS - 1); }
 
 static struct {
     voice_t v[NDRUM];
@@ -15,7 +20,10 @@ static struct {
     int32_t tail;                /* declick: the last output of cut voices, decaying */
     int32_t peak;                /* largest |output| since the UI last looked (TRACKS meter) */
     uint8_t kick;                /* Jangada: a kick (GM 35 / 36) since the master's DUCK looked (fx.c duck_block) */
+    uint8_t synth[NDRUM];        /* Jangada: the voice plays a synthesised kit (ds[]) */
+    dsv_t ds[NDRUM];
 } drums = {.set = -2};
+static int32_t ds_buf[CTL];
 
 static int32_t drum_set(void)
 {
@@ -29,12 +37,47 @@ static int32_t drum_set(void)
     return drums.set;
 }
 
+/* a free voice, else the oldest (its last value fades: no click); the hi-hat choke first */
+static voice_t *drum_voice(uint32_t note)
+{
+    voice_t *v = &drums.v[0];
+    uint32_t i;
+    if (note == 35u || note == 36u)
+        drums.kick = 1;
+    if (note == 42u || note == 44u)                 /* hi-hat choke */
+        for (i = 0; i < NDRUM; i++)
+            if (drums.v[i].active && drums.v[i].note == 46u) {
+                drums.v[i].active = 0;
+                drums.tail += drums.v[i].s[7];
+            }
+    for (i = 0; i < NDRUM; i++) {
+        if (!drums.v[i].active)
+            return &drums.v[i];
+        if (drums.v[i].age < v->age)
+            v = &drums.v[i];
+    }
+    drums.tail += v->s[7];
+    return v;
+}
+
 static void drum_on(uint32_t note, uint32_t vel)
 {
     int32_t si = drum_set();
     const smp_set_t *set;
     voice_t *v = &drums.v[0];
-    uint32_t i, zi = 0xFFFFu;
+    uint32_t i, zi = 0xFFFFu, kit = drum_kit();
+    if (kit) {                                      /* Jangada: a synthesised kit */
+        v = drum_voice(note);
+        i = (uint32_t)(v - drums.v);
+        v->note = (uint8_t)note;
+        v->vel = (uint8_t)vel;
+        v->active = 1;
+        v->s[7] = 0;
+        v->age = ++drums.age;
+        drums.synth[i] = 1;
+        ds_on(&drums.ds[i], &DS_KITS[kit - 1u], note, vel);
+        return;
+    }
     if (si < 0)
         return;
     set = &SMP_SETS[si];
@@ -69,6 +112,7 @@ static void drum_on(uint32_t note, uint32_t vel)
     v->s[0] = v->s[1] = v->s[2] = 0;
     v->s[3] = sample_next(&SMP_ZONES[zi], v, 0);
     v->s[5] = (int32_t)((pow2_q16((int32_t)note * 16 - SMP_ZONES[zi].root16) >> 8) * (SMP_ZONES[zi].rate >> 8));
+    drums.synth[v - drums.v] = 0;
 }
 
 /* adds the drums into the dry mix and the reverb send; mono != 0: into mono instead, before the
@@ -87,12 +131,36 @@ static inline void drums_mix(int32_t *ml, int32_t *mr, int32_t *rev, int32_t *mo
         }
         drums.tail -= drums.tail / 16 + (drums.tail > 0 ? 1 : drums.tail < 0 ? -1 : 0);
     }
+    for (k = 0; k < NDRUM; k++) {                   /* Jangada: synthesised voices (they peak ~1.75 x the GM
+                                                     * samples, as SLOOP measured: brought to the same level) */
+        voice_t *v = &drums.v[k];
+        uint32_t m = n < CTL ? n : CTL;
+        int32_t gs = (lvl * 4681) >> 13;
+        if (!v->active || !drums.synth[k])
+            continue;
+        if (!ds_render(&drums.ds[k], ds_buf, m))
+            v->active = 0;
+        for (i = 0; i < m; i++) {
+            int32_t s = mulq15(ds_buf[i], gs);
+            v->s[7] = s;
+            if (s > pk || -s > pk)
+                pk = s < 0 ? -s : s;
+            if (mono) {
+                mono[i] += s;
+                continue;
+            }
+            ml[i] += (s * gl) >> 12;
+            mr[i] += (s * gr) >> 12;
+            if (send)
+                rev[i] += mulq15(s, send);
+        }
+    }
     for (k = 0; k < NDRUM; k++) {
         voice_t *v = &drums.v[k];
         const smp_zone_t *z = &SMP_ZONES[v->s[4]];
         uint32_t frac = v->ph[1], stepq = (uint32_t)v->s[5];   /* Q16 source samples per output (drum_on) */
         int32_t g;
-        if (!v->active)
+        if (!v->active || drums.synth[k])
             continue;
         g = mulq15(lvl, v->vel * 258);
         for (i = 0; i < n; i++) {

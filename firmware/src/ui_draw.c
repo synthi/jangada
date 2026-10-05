@@ -475,7 +475,7 @@ static void trk_short_name(uint32_t c, char *b)      /* the track's sound, b hol
     const track_t *t = &trk[c];
     const engine_t *e = ENGINES[t->eng_req % NENGINES];
     if (is_drum(&trk[c]))
-        str_cpy(b, "DRUM", 13);
+        str_cpy(b, drum_kit() ? DRUM_KIT_NAMES[drum_kit()] : "DRUM", 13);   /* Jangada: the kit */
     else if (user_of(t) < UP_SLOTS)
         up_name(user_of(t), b);
     else if (e->npresets)
