@@ -180,6 +180,7 @@ static int32_t send_c[CTL], send_d[CTL], send_r[CTL], wet[CTL], mix_l[CTL], mix_
  * events_block advances it while playing. The punch-in loops and gate and the DUCK curve read it. */
 #define BEAT_U ((uint32_t)FS * 60u)
 static uint32_t clk_pos;
+static uint32_t clk_beat;                               /* beats since play (the TRACKS screen: bar.beat) */
 
 /* ---- DUCK: every kick (GM 35 / 36 on the drum track: drums.kick) dips the synth parts, which come
  * back over an eighth note: depth G_DUCK, the curve (1 - t / T)^2. At 0 nothing changes. */

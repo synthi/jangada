@@ -847,17 +847,163 @@ static void layer_screen_draw(void)
     ui.force = 0;
 }
 
-/* ui_draw: the layer's screen when one shows (1), else back to the page once */
+/* ------------------------------------------------------------ TRACKS --- */
+/* Jangada (after SLOOP's live view): one row per track: its number (the selected one lit), the sound
+ * and its engine, the steps of the page the playhead is on, the level, MUTE / SOLO / REC; above, the
+ * tempo and bar.beat; below, KNOB 1..4 as on the page (TYPE LEVEL LEN PAN, ui_input.c tracks_edit) */
+static uint32_t tr_sig[NTRK + 2];
+
+static void tracks_head(void)
+{
+    char b[16], p[12];
+    uint32_t sig, any_rec = song.rec != 0u;
+    fmt_int(b, song.g[G_BPM]);
+    if (song.playing) {
+        fmt_int(p, (int32_t)(clk_beat / 4u) + 1);
+        str_cpy(p + str_len(p), ".", 2);
+        fmt_int(p + str_len(p), (int32_t)(clk_beat % 4u) + 1);
+    } else {
+        str_cpy(p, "STOP", sizeof p);
+    }
+    sig = ly_hash(ly_hash(ly_hash(any_rec * 3u + song.playing * 7u + (ui.bpm_t != 0) * 11u, b), p),
+                  ui.msg_t ? ui.msg : "");
+    if (!ui.force && sig == tr_sig[NTRK])
+        return;
+    tr_sig[NTRK] = sig;
+    cv_begin(240, 40, C_BLACK);
+    {
+        int32_t x = cv_text(4, 2, &FONT_L, b, ui.bpm_t ? C_WHITE : C_HI);
+        cv_text(x + 4, 18, &FONT_S, "BPM", C_GRAY);
+    }
+    if (ui.msg_t) {
+        cv_text(116, 12, &FONT_S, ui.msg, C_WHITE);
+    } else {
+        int32_t i;
+        if (song.playing)
+            for (i = 0; i < 10; i++)
+                cv_rect(116 + i, 12 + i / 2, 1, 12 - i, C_WHITE);   /* a triangle */
+        else
+            cv_rect(116, 13, 10, 10, C_DIM);
+        cv_text(132, 9, &FONT_S, p, song.playing ? C_WHITE : C_DIM);
+        if (any_rec) {
+            int32_t w = text_w(&FONT_S, "REC") + 8;
+            cv_rect(236 - w, 8, w, 18, C_WHITE);
+            cv_text(240 - w, 9, &FONT_S, "REC", C_BLACK);
+        }
+    }
+    cv_rect(0, 38, 240, 1, C_LINE);
+    cv_blit(0, 0);
+}
+
+static void tracks_row(uint32_t c)
+{
+    track_t *t = &trk[c];
+    uint32_t sel = c == song.sel, len = trk_len(t), lvl = trk_level(c), i, sig;
+    uint32_t page = song.playing ? t->seq_idx / 16u : (sel ? ui.bank : 0u), steps = 0;
+    uint32_t mute = t->p[P_MUTE] != 0 || !lvl, solo = (song.solo >> c) & 1u, rec = (song.rec >> c) & 1u;
+    uint32_t ph = song.playing && t->seq_idx / 16u == page ? t->seq_idx % 16u : 99u;
+    int32_t y0 = 42 + (int32_t)c * 35;
+    char name[16];
+    const char *eng = is_drum(t) ? "GM KIT" : ENGINES[t->eng_req % NENGINES]->name;
+    trk_short_name(c, name);
+    for (i = 0; i < 16u; i++)
+        if (page * 16u + i < len && step_on(&t->step[page * 16u + i]))
+            steps |= 1u << i;
+    sig = ly_hash(ly_hash(steps * 31u + ph * 7u + len * 131u + page * 17u + lvl * 1031u + sel * 3u + mute * 5u +
+                          solo * 13u + rec * 19u, name), eng);
+    if (!ui.force && sig == tr_sig[c])
+        return;
+    tr_sig[c] = sig;
+    cv_begin(240, 34, C_BLACK);
+    {   /* the number: lit when selected */
+        char b[2] = {(char)('1' + c), 0};
+        cv_rect(2, 1, 26, 31, sel ? C_HI : C_LINE);
+        cv_text(15 - text_w(&FONT_S, b) / 2, 8, &FONT_S, b, sel ? C_BLACK : C_GRAY);
+    }
+    {   /* the sound and its engine; the badges on the right */
+        int32_t x = cv_text(34, 0, &FONT_S, name, mute ? C_DIM : sel ? C_HI : C_AMB), bx = 238;
+        const char *badge[3] = {rec ? "REC" : 0, solo ? "SOLO" : 0, t->p[P_MUTE] ? "MUTE" : 0};
+        uint32_t k;
+        for (k = 0; k < 3u; k++) {
+            int32_t w;
+            if (!badge[k])
+                continue;
+            w = text_w(&FONT_S, badge[k]) + 6;
+            bx -= w;
+            cv_rect(bx, 1, w, 15, k == 2u ? C_DIM : C_WHITE);
+            cv_text(bx + 3, 0, &FONT_S, badge[k], C_BLACK);
+            bx -= 3;
+        }
+        if (x + 8 + text_w(&FONT_S, eng) < bx)
+            cv_text(x + 8, 0, &FONT_S, eng, C_DIM);
+    }
+    for (i = 0; i < 16u; i++) {                         /* the steps of the page; the playhead under */
+        int32_t x = 34 + (int32_t)i * 11;
+        uint16_t col = page * 16u + i >= len ? C_BLACK : (steps >> i) & 1u ? (sel ? C_HI : C_AMB) : C_LINE;
+        cv_rect(x, 19, 9, 8, col);
+        if (i == ph)
+            cv_rect(x, 29, 9, 2, C_WHITE);
+    }
+    cv_rect(212, 22, 26, 3, C_LINE);                    /* the level */
+    if (!mute)
+        cv_rect(212, 22, (int32_t)(lvl * 26u / 127u), 3, sel ? C_HI : C_GRAY);
+    cv_blit(0, (uint32_t)y0);
+}
+
+static void tracks_screen_draw(void)
+{
+    static char v[4][12];
+    const char *lab[4] = {"TYPE", "LEVEL", "LEN", "PAN"}, *val[4] = {v[0], v[1], v[2], v[3]}, *u;
+    int32_t ratio[4];
+    const track_t *t = TSEL;
+    uint32_t c, lvl = trk_level(song.sel);
+    if (!ly.shown) {
+        lcd_fill(0, 0, 240, 240, C_BLACK);
+        ui.force = 1;
+        ly.shown = 1;
+    }
+    tracks_head();
+    for (c = 0; c < NTRK; c++)
+        tracks_row(c);
+    str_cpy(v[0], is_drum(t) ? "DRUM" : "SYNTH", 12);
+    ratio[0] = song.sel == TRK_DRUM ? (is_drum(t) ? 0 : 1000) : -1;
+    if (!lvl || t->p[P_MUTE])
+        str_cpy(v[1], "MUTE", 12);
+    else
+        fmt_int(v[1], (int32_t)lvl * 100 / 127);
+    ratio[1] = (int32_t)lvl * 1000 / 127;
+    fmt_int(v[2], t->p[P_SLEN]);
+    ratio[2] = (t->p[P_SLEN] - 1) * 1000 / (NSTEP - 1);
+    param_format(&TP[P_PAN], t->p[P_PAN], v[3], &u);
+    ratio[3] = (t->p[P_PAN] + 64) * 1000 / 127;
+    layer_dials(lab, val, ratio, 0x7A11u);
+    if (ui.msg_t)
+        ui.msg_t--;
+    if (ui.hot_t)
+        ui.hot_t--;
+    if (ui.bpm_t)
+        ui.bpm_t--;
+    ui.force = 0;
+}
+
+/* ui_draw: the layer's screen when one shows, else TRACKS (1); else back to the page once */
 static int layers_draw(void)
 {
-    if (layer_visible()) {
+    static uint8_t which;                               /* the full screen shown: 1 a layer, 2 TRACKS */
+    uint32_t want = layer_visible() ? 1u : (!ui.home && !ui.confirm && cur_page()->scope == SC_TRK) ? 2u : 0u;
+    if (want != which && ly.shown) {
+        ly.shown = 0;                                   /* another screen: from black, everything */
+        lcd_fill(0, 0, 240, 240, C_BLACK);
+        ui.force = 1;
+    }
+    which = (uint8_t)want;
+    if (want == 1u) {
         layer_screen_draw();
         return 1;
     }
-    if (ly.shown) {
-        ly.shown = 0;
-        lcd_fill(0, 0, 240, 240, C_BLACK);
-        ui.force = 1;
+    if (want == 2u) {
+        tracks_screen_draw();
+        return 1;
     }
     return 0;
 }

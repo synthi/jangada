@@ -488,6 +488,7 @@ static void seq_start(void)
     }
     song.tick = 0;
     clk_pos = 0;                                   /* fx.c: the beat clock, step 0 on the beat */
+    clk_beat = 0;
     song.playing = 1;
     slicer_start();                                /* slicer.c: its step 0 with the sequencer's */
 }
@@ -734,7 +735,9 @@ static void events_block(uint32_t n)
     if (song.playing) {
         song.tick++;
         clk_pos += n * (uint32_t)song.g[G_BPM];       /* fx.c: the beat clock */
-        while (clk_pos >= BEAT_U)
+        while (clk_pos >= BEAT_U) {
             clk_pos -= BEAT_U;
+            clk_beat++;
+        }
     }
 }
