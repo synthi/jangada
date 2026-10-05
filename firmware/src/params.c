@@ -121,6 +121,9 @@ static const param_desc_t GP[G_COUNT] = {
     [G_DRLVL] = PD("LVL", F_INT, 0, 127, 100),
     [G_DRREV] = PD("REV", F_INT, 0, 127, 16),
     [G_T4] = PE("T4", N_T4, 0),                        /* Jangada: track 4 DRUM / SYNTH */
+    [G_DUST] = PD("DUST", F_PCT, 0, 127, 0),           /* Jangada: the master bus (fx.c) */
+    [G_DUCK] = PD("DUCK", F_PCT, 0, 127, 0),
+    [G_FILT] = PD("FILT", F_BIPCT, -64, 63, 0),
 };
 
 static const param_desc_t *track_desc(const track_t *t, uint32_t id)
@@ -278,6 +281,7 @@ static const page_t PAGES[] = {
     {"GLOBAL", FAM_GLO, SC_GLOBAL, GR_NONE, {G_BPM, G_SWING, G_CLOCK, G_TUNE}},
     {"SYSTEM", FAM_GLO, SC_GLOBAL, GR_NONE, {G_MIDI, G_SYNC, G_ROUTE, G_INFO}},
     {"DRUMS", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DRCH, G_DRLVL, G_DRREV, G_T4}},   /* GM kit on MIDI ch 10; T4: Jangada */
+    {"MASTER", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DUST, G_DUCK, G_FILT, 0xFF}},    /* Jangada: the master bus (fx.c) */
     {"PRESETS", FAM_SAVE, SC_GLOBAL, GR_BROWSE, {0xFF, 0xFF, 0xFF, 0xFF}},   /* browser: PRESETS knob / KNOB 1 */
     {"USER", FAM_SAVE, SC_GLOBAL, GR_USER, {0xFF, 0xFF, 0xFF, 0xFF}},       /* user presets: SLOT LOAD ERASE SAVE */
     {"PROJECT", FAM_SAVE, SC_GLOBAL, GR_SLOTS, {G_SLOT, 0xFF, G_LOAD, G_SAVE}},

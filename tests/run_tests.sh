@@ -51,6 +51,8 @@ $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/arp_test" tests/arp_test.c -lm
 run "arp: UPDN / UDI / RPT, long divisions (Jangada)" "$OUT/arp_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/step_test" tests/step_test.c -lm
 run "steps: RTCH ratchet and CHNC chance (Jangada)" "$OUT/step_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/punch_test" tests/punch_test.c -lm
+run "master: punch-in FX, DUST, DUCK, FILT (Jangada, after SLOOP)" "$OUT/punch_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/kit_test" tests/kit_test.c -lm
 run "kit: GM 42 / 44 / 49 are not toms (Felucca#25)" "$OUT/kit_test"
 run "keys: stable parameter keys (Jangada)" python3 tests/keys_test.py

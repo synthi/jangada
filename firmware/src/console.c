@@ -292,6 +292,45 @@ static void con_preset(const char *p)
     con_puts("\r\n");
 }
 
+/* g ID [-]VALUE: set a global parameter (G_*), clamped to its range; g ID alone prints it */
+static void con_global(const char *p)
+{
+    int ok1, ok2, neg;
+    uint32_t id = con_num(&p, &ok1), v;
+    while (*p == ' ')
+        p++;
+    neg = *p == '-';
+    p += neg;
+    v = con_num(&p, &ok2);
+    if (!ok1 || id >= G_COUNT) {
+        con_puts("usage: g ID [VALUE]\r\n");
+        return;
+    }
+    if (ok2) {
+        song.g[id] = (int16_t)clamp(neg ? -(int32_t)v : (int32_t)v, GP[id].min, GP[id].max);
+        ui.force = 1;
+    }
+    con_puts(GP[id].label);
+    con_putc(' ');
+    con_dec(song.g[id]);
+    con_puts("\r\n");
+}
+
+/* punch N | off: start punch-in effect N (0..15) as FX + its key, or let it go (hardware tests) */
+static void con_punch(const char *p)
+{
+    int ok;
+    uint32_t n = con_num(&p, &ok);
+    if (ok && n < PUNCH_NFX) {
+        punch.req = (int8_t)n;
+        con_puts(PUNCH_NAME[n]);
+    } else {
+        punch.req = -1;
+        con_puts("off");
+    }
+    con_puts("\r\n");
+}
+
 /* t4 [drum | synth]: GLO > DRUMS T4, as the knob (ui.c t4_follow does the rest) */
 static void con_t4(const char *p)
 {
@@ -338,7 +377,7 @@ static void con_voices(void)
 static void con_exec(const char *p)
 {
     if (con_word(&p, "help") || con_word(&p, "?"))
-        con_puts("status  dbg  crash  params  color [N|NAME]  preset E I [T]  t4 [drum|synth]  voices  droneoff  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
+        con_puts("status  dbg  crash  params  color [N|NAME]  preset E I [T]  t4 [drum|synth]  g ID [VAL]  punch N|off  voices  droneoff  memr ADDR [LEN]  flr OFF [LEN]  uboot yes\r\n");
     else if (con_word(&p, "status"))
         con_status();
     else if (con_word(&p, "dbg"))
@@ -353,6 +392,10 @@ static void con_exec(const char *p)
         con_preset(p);
     else if (con_word(&p, "t4"))
         con_t4(p);
+    else if (con_word(&p, "g"))
+        con_global(p);
+    else if (con_word(&p, "punch"))
+        con_punch(p);
     else if (con_word(&p, "voices"))
         con_voices();
     else if (con_word(&p, "droneoff")) {               /* as ARP held: latched chords off */

@@ -70,6 +70,8 @@ enum {                          /* global parameters */
     G_CLRSEQ, G_INITSND,
     G_DRCH, G_DRLVL, G_DRREV,
     G_T4,                       /* Jangada: track 4 is the GM drum track (0) or a fourth synth part (1) */
+    G_DUST, G_DUCK, G_FILT,     /* Jangada (after SLOOP): the master bus, fx.c: an old sampler and a record,
+                                 * the kick ducking the synth parts, the DJ filter (< 0 LP, > 0 HP) */
     G_COUNT
 };
 

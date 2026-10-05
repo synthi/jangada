@@ -1054,6 +1054,7 @@ function makeMockDevice(opt = {}) {
     D("SLOT", F.INT, 1, 4, 1), D("NAME", F.ENUM, 0, 0, 0, ["--"]), D("LOAD", F.ENUM, 0, 1, 0, ["--", "GO"]), D("SAVE", F.ENUM, 0, 1, 0, ["--", "GO"]),
     D("ENG", F.ENUM, 0, 8, 0, ["ANALOG", "DIGITAL", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN"]), D("SET", F.ENUM, 0, 1, 0, ["--", "GO"]), D("CLRSQ", F.ENUM, 0, 1, 0, ["--", "GO"]), D("INIT", F.ENUM, 0, 1, 0, ["--", "GO"]),
     D("CH", F.INT, 0, 16, 10), D("LVL", F.INT, 0, 127, 100), D("REV", F.INT, 0, 127, 16), D("T4", F.ENUM, 0, 1, 0, ["DRUM", "SYNTH"]),
+    D("DUST", F.PCT, 0, 127, 0), D("DUCK", F.PCT, 0, 127, 0), D("FILT", F.BIPCT, -64, 63, 0),
   ];
   const P = (name, e, env = [10, 70, 90, 60], mono = 0, pat = 0) => ({ name, e, env, mono, pat });
   const ENG = [
@@ -1186,7 +1187,7 @@ function makeMockDevice(opt = {}) {
         P("GHOST KEYS", [0, 40, 110, 90, 0, 50, 20, 80, 0, 0, 0, 0, 0, 0, 0, 0], [90, 90, 120, 110], 0, 0),
         P("DRONE DUST", [2, 50, 100, 120, -12, 90, 70, 70, 0, 0, 0, 0, 0, 0, 0, 0], [110, 90, 127, 118], 0, 0)] },
   ];
-  const P_COUNT = 77, G_COUNT = 28, NSTEP = 64, P_E0 = 61, NEDIT = 16, G_ENGSEL = 20, P_SLCR = 45;
+  const P_COUNT = 77, G_COUNT = 31, NSTEP = 64, P_E0 = 61, NEDIT = 16, G_ENGSEL = 20, P_SLCR = 45;
   /* </generated> */
   /* factory PATTERNS[] (ui.c): absolute notes, 0 rest; flags 1 accent, 2 slide, 4 tie (holds the previous note) */
   const T_ = 4;
@@ -1623,7 +1624,7 @@ const GLYPH = {
 /* section headings (LAYOUT titles) and page titles */
 const HEAD_IC = { ENV: "function_env_adsr_exp", LFO: "waveform_sine", EDIT: "ui_knob", VOICE: "symbol_keyboard",
   FX: "symbol_effector", SCL: "symbol_tuning", ARP: "control_arrow_up_down", "SEQ PATTERN": "symbol_grid",
-  GLOBAL: "symbol_cog", DRUMS: "symbol_drum", INSTRUMENT: "symbol_keyboard" };
+  GLOBAL: "symbol_cog", DRUMS: "symbol_drum", MASTER: "ui_knob", INSTRUMENT: "symbol_keyboard" };
 const PAGE_IC = { FLT: "function_filter_lpf_peak", FILT: "function_filter_lpf_peak", DLY: "symbol_echo", "REV/CHO": "symbol_spring", SLICER: "symbol_grid" };
 /* WAVE / WAVE2 choices; phase-distortion shapes without a close glyph (SPLS, RSAW, RTRI, RTRP) get none */
 const WAVE_IC = { SIN: "waveform_sine", TRI: "waveform_triangle_ac", SAW: "waveform_sawtooth_ac", SQR: "waveform_square",
@@ -1868,7 +1869,7 @@ function selfLoad() {
 const stepEdit = new Map(); /* index -> time of the last edit */
 
 /* parameter ids (firmware/src/core.h); used only when P_COUNT / G_COUNT match */
-const EXPECT = { pcount: 77, gcount: 28, pe0: 61 };   /* tools/gen_editor_tables.py --check: == the firmware */
+const EXPECT = { pcount: 77, gcount: 31, pe0: 61 };   /* tools/gen_editor_tables.py --check: == the firmware */
 const P = { LEVEL: 0, SLEN: 29 };
 const LAYOUT = (pe0) => [
   { t: "ENV", pages: [["ENV", 0, [1, 2, 3, 4]], ["ENV DEST", 0, [5, 6, 7, 8]]] },
@@ -1883,6 +1884,7 @@ const LAYOUT = (pe0) => [
   { t: "SEQ PATTERN", tab: "seqgroups", pages: [["PATTERN", 0, [29, 30, 31, 32]]] },
   { t: "GLOBAL", tab: "setgroups", pages: [["GLOBAL", 1, [0, 1, 2, 3]]] },
   { t: "DRUMS", tab: "setgroups", pages: [["DRUMS", 1, [24, 25, 26]]] },
+  { t: "MASTER", tab: "setgroups", pages: [["MASTER", 1, [28, 29, 30]]] },   /* Jangada: DUST DUCK FILT */
 ];
 /* globals that are actions or placeholders on the device: buttons instead, or hidden */
 const G_SKIP = new Set(["SLOT", "NAME", "LOAD", "SAVE", "ENG", "SET", "CLRSQ", "INIT", "MIDI", "SYNC", "ROUT", "CPU", "CLK"]);

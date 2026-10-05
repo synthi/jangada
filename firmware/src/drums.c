@@ -14,6 +14,7 @@ static struct {
     int16_t set;                 /* SMP_SETS index of "PERC" (GM map), -1 = none */
     int32_t tail;                /* declick: the last output of cut voices, decaying */
     int32_t peak;                /* largest |output| since the UI last looked (TRACKS meter) */
+    uint8_t kick;                /* Jangada: a kick (GM 35 / 36) since the master's DUCK looked (fx.c duck_block) */
 } drums = {.set = -2};
 
 static int32_t drum_set(void)
@@ -40,6 +41,8 @@ static void drum_on(uint32_t note, uint32_t vel)
     zi = smp_zone_pick(set, note);
     if (zi == 0xFFFFu)
         return;
+    if (note == 35u || note == 36u)
+        drums.kick = 1;
     if (note == 42u || note == 44u)                 /* hi-hat choke */
         for (i = 0; i < NDRUM; i++)
             if (drums.v[i].active && drums.v[i].note == 46u) {

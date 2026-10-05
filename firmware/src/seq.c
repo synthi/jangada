@@ -359,6 +359,15 @@ static void keyboard_block(void)
         if (!((ch >> k) & 1u))
             continue;
         if ((cur >> k) & 1u) {                    /* the selected track; the key-up goes to the same one */
+            if (punch.hold) {                     /* Jangada: FX held, a white key = a punch-in effect */
+                int32_t fx = punch_key(k);        /* (fx.c punch.c); a black key does nothing */
+                kb_note[k] = KB_SILENT;           /* no note, and none to release */
+                if (fx >= 0) {
+                    punch.req = (int8_t)fx;
+                    punch.keybit = 1u << k;
+                }
+                continue;
+            }
             kb_trk[k] = song.sel;
             kb_note[k] = (uint8_t)kb_map(&trk[kb_trk[k]], k);
             if (kb_note[k] == KB_SILENT)
@@ -367,6 +376,10 @@ static void keyboard_block(void)
             mc = trk_midi_ch(kb_trk[k]);
             midi_out_event(0x09u | (0x90u | mc) << 8 | (uint32_t)kb_note[k] << 16 | 100u << 24);
         } else {
+            if (punch.keybit == 1u << k) {        /* the punch-in key is up: the mix comes back */
+                punch.keybit = 0;
+                punch.req = -1;
+            }
             if (kb_note[k] == KB_SILENT)
                 continue;
             input_off(&trk[kb_trk[k] % NTRK], kb_note[k]);
@@ -389,6 +402,7 @@ static void seq_start(void)
         t->rh_n = 0;
     }
     song.tick = 0;
+    clk_pos = 0;                                   /* fx.c: the beat clock, step 0 on the beat */
     song.playing = 1;
     slicer_start();                                /* slicer.c: its step 0 with the sequencer's */
 }
@@ -632,6 +646,10 @@ static void events_block(uint32_t n)
     for (i = 0; i < NTRK; i++)
         if (trk_synth(i))
             arp_tick(&trk[i], n);
-    if (song.playing)
+    if (song.playing) {
         song.tick++;
+        clk_pos += n * (uint32_t)song.g[G_BPM];       /* fx.c: the beat clock */
+        while (clk_pos >= BEAT_U)
+            clk_pos -= BEAT_U;
+    }
 }

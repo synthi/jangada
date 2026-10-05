@@ -175,6 +175,39 @@ static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t
 static void events_block(uint32_t n);                    /* seq.c */
 static int32_t send_c[CTL], send_d[CTL], send_r[CTL], wet[CTL], mix_l[CTL], mix_r[CTL], part_buf[CTL];
 
+/* ---- Jangada: the beat clock (after SLOOP), in units of a sample at 1 BPM: a beat is BEAT_U at any
+ * tempo, so a tempo change keeps the place in the beat. seq_start zeroes it with step 0; seq.c
+ * events_block advances it while playing. The punch-in loops and gate and the DUCK curve read it. */
+#define BEAT_U ((uint32_t)FS * 60u)
+static uint32_t clk_pos;
+
+/* ---- DUCK: every kick (GM 35 / 36 on the drum track: drums.kick) dips the synth parts, which come
+ * back over an eighth note: depth G_DUCK, the curve (1 - t / T)^2. At 0 nothing changes. */
+static struct {
+    uint32_t t;                                         /* units since the kick */
+    int32_t g0, g1;                                     /* the parts' gain at the block start, end (Q15) */
+} duck = {0xFFFFFFFFu, 32767, 32767};
+
+static void duck_block(uint32_t adv)
+{
+    int32_t depth = song.g[G_DUCK] * 258, x;
+    uint32_t len = BEAT_U / 2u;
+    duck.g0 = duck.g1;
+    if (drums.kick) {
+        drums.kick = 0;
+        duck.t = 0;
+    }
+    if (!depth || duck.t >= len) {
+        duck.g1 = 32767;
+        return;
+    }
+    x = 32767 - (int32_t)((duck.t << 10) / (len >> 5));      /* 1 - t / T, Q15 (t < len < 2^22) */
+    if (x < 0)
+        x = 0;
+    duck.g1 = 32767 - mulq15(depth, mulq15(x, x));
+    duck.t = duck.t + adv < duck.t ? 0xFFFFFFFFu : duck.t + adv;
+}
+
 /* one synth part into the dry mix and the sends; a part with no voice sounding costs
  * the LFO tick and a cleared buffer only (after the DIST tail has run out) */
 static void mix_part(track_t *t, uint32_t n)
@@ -191,13 +224,18 @@ static void mix_part(track_t *t, uint32_t n)
         int32_t lvl = LEVEL_Q12[t->p[P_LEVEL] & 127], pan = t->p[P_PAN];
         int32_t gl = 4096 - (pan > 0 ? pan * 64 : 0), gr = 4096 + (pan < 0 ? pan * 64 : 0);
         int32_t c = t->p[P_CHOR] * 258, d = t->p[P_DLY] * 258, r = t->p[P_REV] * 258, pk = t->peak;
-        int32_t xmax = c > d ? c : d;
+        int32_t xmax = c > d ? c : d, ga = duck.g0, gb = duck.g1;   /* DUCK, ramped over the block */
         xmax = 0x7FFFFFFF / ((xmax > r ? xmax : r) | 1);   /* sends: loud chords at a high LEVEL */
         track_dist(t, b, n);
         slicer_track(t, b, n);                          /* slicer.c: before the level, pan and sends */
         for (i = 0; i < n; i++) {
-            int32_t x = ((b[i] >> 2) * lvl) >> 10, a = x < 0 ? -x : x;   /* pre-shift: 8 loud voices */
-            int32_t xs = clamp(x, -xmax, xmax);         /* sends: mulq15 would overflow */
+            int32_t x = ((b[i] >> 2) * lvl) >> 10, a, xs;   /* pre-shift: 8 loud voices */
+            if (ga < 32767 || gb < 32767) {
+                int32_t g = ga + (((gb - ga) * (int32_t)i) >> CTL_LOG2);
+                x = (x >> 4) * (g >> 3) >> 8;           /* (Q15 in two halves: no 32-bit overflow) */
+            }
+            a = x < 0 ? -x : x;
+            xs = clamp(x, -xmax, xmax);                 /* sends: mulq15 would overflow */
             if (a > pk)
                 pk = a;
             if (c)
@@ -213,12 +251,114 @@ static void mix_part(track_t *t, uint32_t n)
     }
 }
 
+/* ---- Jangada: the master bus, after SLOOP (isod89/sloop-fm1, GPL-3.0): DUST, the DJ filter and the
+ * punch-in effects run on the whole mix, in that order, before the volume. All three are off (and the
+ * mix bit-identical) until used. */
+/* ---- DUST: the master through an old sampler and a record. G_DUST 0..127 turns up together: drive
+ * into a soft clip, a lower sample rate (held samples, 44.1 -> 11 kHz), fewer bits (15 -> 8), a
+ * one-pole low-pass (open -> ~3 kHz), a little hiss and crackle. The hiss and the crackle are the
+ * record turning: they fade in with PLAY and out (~0.1 s) at STOP, so a stopped Jangada is silent.
+ * Stereo, ~25 ops a sample. */
+static struct {
+    int32_t hl, hr, hn;                                 /* held samples, samples left to hold */
+    int32_t ll, lr;                                     /* low-pass states */
+    int32_t rnd, click;                                 /* noise state, a crackle decaying */
+    int32_t bed;                                        /* hiss / crackle level, Q15: 0 stopped, 32767 playing */
+} dust = {0, 0, 0, 0, 0, 0x2545F491, 0, 0};
+
+static int32_t crush_bits(int32_t v, int32_t shift)    /* fewer bits, rounded toward 0: no DC from tails */
+{
+    return v >= 0 ? (v >> shift) << shift : -((-v >> shift) << shift);
+}
+
+static void dust_process(int32_t *l, int32_t *r, uint32_t n)
+{
+    int32_t d = song.g[G_DUST], hold, shift, a, drive, hiss, i, bed0, bed1;
+    uint32_t pc;
+    if (!d) {
+        dust.bed = 0;
+        return;
+    }
+    hold = 1 + d * 3 / 127;
+    shift = d / 18;
+    a = 32767 - d * 165;                                /* one-pole coefficient, Q15 */
+    drive = 4096 + d * 24;                              /* Q12: 1x .. 1.75x */
+    hiss = d * 2;
+    pc = (uint32_t)d * 7u;                              /* crackle: chance per sample, x 2^-22 */
+    bed0 = dust.bed;                                    /* ~0.1 s from 0 to full (238 a block of 32) */
+    bed1 = dust.bed = clamp(dust.bed + (song.playing ? 238 : -238), 0, 32767);
+    for (i = 0; i < (int32_t)n; i++) {
+        int32_t x = l[i], y = r[i];
+        int32_t bed = bed0 + (((bed1 - bed0) * i) >> CTL_LOG2);
+        uint32_t nz = noise32(&dust.rnd);
+        if (--dust.hn <= 0) {                           /* sample and hold, then the bits */
+            dust.hn = hold;
+            dust.hl = softclip(((x >> 2) * drive) >> 10);
+            dust.hr = softclip(((y >> 2) * drive) >> 10);
+            if (shift) {
+                dust.hl = crush_bits(dust.hl, shift);
+                dust.hr = crush_bits(dust.hr, shift);
+            }
+        }
+        dust.ll += mulq15(dust.hl - dust.ll, a);
+        dust.lr += mulq15(dust.hr - dust.lr, a);
+        if ((nz >> 10) < pc)                            /* a speck of dust */
+            dust.click = mulq15(((int32_t)(nz & 0x3FFu) - 512) * d / 8, bed);
+        x = dust.ll + dust.click + mulq15(((int32_t)(nz >> 16) - 32768) * hiss >> 15, bed);
+        y = dust.lr + dust.click + mulq15(((int32_t)(nz & 0xFFFFu) - 32768) * hiss >> 15, bed);
+        dust.click -= dust.click >> 2;
+        l[i] = x;
+        r[i] = y;
+    }
+}
+
+/* ---- the DJ filter on the master: G_FILT < 0 a low-pass closing, > 0 a high-pass opening, 0 off.
+ * The cutoff glides to the knob (no zipper); at 0 it opens fully, then the filter is bypassed. */
+static struct {
+    int32_t cut;                                        /* now, 0..127 << 8 (CUTOFF_HZ index) */
+    int8_t mode;                                        /* -1 LP, 1 HP, 0 off */
+    int32_t l1, l2, r1, r2;
+} djf;
+
+static void djf_process(int32_t *l, int32_t *r, uint32_t n)
+{
+    int32_t v = song.g[G_FILT], to, i;
+    tsvf_t c;
+    if (v < 0 && djf.mode >= 0) {                       /* (switching side: from open) */
+        djf.mode = -1;
+        djf.cut = 127 << 8;
+        djf.l1 = djf.l2 = djf.r1 = djf.r2 = 0;
+    } else if (v > 0 && djf.mode <= 0) {
+        djf.mode = 1;
+        djf.cut = 0;
+        djf.l1 = djf.l2 = djf.r1 = djf.r2 = 0;
+    }
+    if (!djf.mode)
+        return;
+    to = djf.mode < 0 ? (v < 0 ? (127 << 8) + v * 90 * 4 : 127 << 8) : (v > 0 ? v * 90 * 4 : 0);
+    djf.cut += clamp(to - djf.cut, -384, 384);          /* ~1.5 index a block */
+    if (!v && djf.cut == to) {
+        djf.mode = 0;                                   /* fully open again: off */
+        return;
+    }
+    tsvf_coef(&c, djf.cut, 40);
+    for (i = 0; i < (int32_t)n; i++) {
+        int32_t x = clamp(l[i], -140000, 140000), y = clamp(r[i], -140000, 140000);
+        int32_t fl = tsvf_lp(&c, x, &djf.l1, &djf.l2), fr = tsvf_lp(&c, y, &djf.r1, &djf.r2);
+        l[i] = djf.mode < 0 ? fl : x - fl;
+        r[i] = djf.mode < 0 ? fr : y - fr;
+    }
+}
+
+#include "punch.c"            /* PUNCH-IN FX on the whole mix (FX held + a white key) */
+
 static void mix_block(int32_t *out, uint32_t n)
 {
     uint32_t i;
     for (i = 0; i < n; i++)
         send_c[i] = send_d[i] = send_r[i] = mix_l[i] = mix_r[i] = 0;
     events_block(n);
+    duck_block(n * (uint32_t)song.g[G_BPM]);
     for (i = 0; i < NTRK; i++)
         if (trk_synth(i))
             mix_part(&trk[i], n);
@@ -228,8 +368,15 @@ static void mix_block(int32_t *out, uint32_t n)
         drums_render(mix_l, mix_r, send_r, n);          /* track 4 is a synth: only the drums' tails */
     fx_buses(send_c, send_d, send_r, wet, n);
     for (i = 0; i < n; i++) {
-        int32_t l = (((mix_l[i] + wet[i]) >> 2) * (int32_t)song.master_q12) >> 10;
-        int32_t r = (((mix_r[i] + wet[i]) >> 2) * (int32_t)song.master_q12) >> 10;
+        mix_l[i] += wet[i];
+        mix_r[i] += wet[i];
+    }
+    dust_process(mix_l, mix_r, n);
+    punch_process(mix_l, mix_r, n);
+    djf_process(mix_l, mix_r, n);
+    for (i = 0; i < n; i++) {
+        int32_t l = ((mix_l[i] >> 2) * (int32_t)song.master_q12) >> 10;
+        int32_t r = ((mix_r[i] >> 2) * (int32_t)song.master_q12) >> 10;
         master_out(&l, &r);
         out[2u * i] = l;
         out[2u * i + 1u] = r;

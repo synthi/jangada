@@ -3,7 +3,7 @@
 # Rewritten by BUDGET_UPDATE=1.
 analog_render 5
 analog_render_lp 585
-analog_render_x 1773
+analog_render_x 1754
 digital_render 333
 phase_render 79
 lofi_render 123
@@ -13,8 +13,9 @@ trio_render 341
 trio_pass 175
 drawbar_render 267
 drawbar_block 102
-grain_render 1731
+grain_render 1710
 grain_block 139
 slicer_track 662
 drums_mix 1213
-fm1_alnk0_irq 37745
+mix_block 13275
+fm1_alnk0_irq 223

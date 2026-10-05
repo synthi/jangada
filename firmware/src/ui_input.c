@@ -296,7 +296,16 @@ static void ui_input(void)
     uint32_t rec = btn_hold(&ui.rec_t0, B_REC, now, !ui.menu && (fam == FAM_SEQ || fam == FAM_ARP || fam == FAM_TRK));
     uint32_t arp = btn_hold(&ui.arp_t0, B_ARP, now, !ui.menu);
     int32_t s;
+    static int8_t punch_shown = -1;
     t4_follow();
+    /* Jangada: FX held = the white keys are the punch-in effects (seq.c keyboard_block, punch.c); a tap of
+     * FX still opens its pages. Its name on screen when one starts */
+    punch.hold = (uint8_t)(!ui.menu && ((fm1_in.buttons >> panel.btn[B_FX]) & 1u));
+    if (punch.req != punch_shown) {
+        punch_shown = punch.req;
+        if (punch_shown >= 0)
+            ui_message(PUNCH_NAME[punch_shown]);
+    }
     if (arp == BT_TAP && !ui.menu && !ui.confirm)       /* Jangada: ARP acts on release, as HOME: a tap */
         open_family(FAM_ARP);                           /* opens its page, a hold (below) does not */
     if (arp == BT_HOLD) {                               /* Jangada: ARP held: every latched (HOLD) chord off */
