@@ -588,6 +588,16 @@ static void ly_dial(int32_t cx, int32_t cy, int32_t r, int32_t ratio, uint16_t c
 }
 
 /* the dial strip: KNOB 1..4, a label and a value under each (no label: an empty column) */
+/* src cut (at the end) until it is no wider than maxw; d holds 12 */
+static void ly_fit(char *d, const char *src, const felucca_font_t *f, int32_t maxw)
+{
+    str_cpy(d, src, 12);
+    while (d[0] && text_w(f, d) > maxw)
+        d[str_len(d) - 1u] = 0;
+    while (d[0] && d[str_len(d) - 1u] == ' ')         /* (no space left hanging at the cut) */
+        d[str_len(d) - 1u] = 0;
+}
+
 static void layer_dials(const char *const lab[4], const char *const val[4], const int32_t ratio[4], uint32_t sig)
 {
     uint32_t k;
@@ -600,13 +610,16 @@ static void layer_dials(const char *const lab[4], const char *const val[4], cons
     for (k = 0; k < 4u; k++) {                          /* a card per knob: dial, label, value */
         int32_t cx = 30 + 60 * (int32_t)k;
         uint16_t hot = ui.hot_t && ui.hot_col == k ? C_WHITE : C_HI;
-        const felucca_font_t *vf = text_w(&FONT_M, val[k]) <= 54 ? &FONT_M : &FONT_S;
+        const felucca_font_t *vf = text_w(&FONT_M, val[k]) <= 52 ? &FONT_M : &FONT_S;
+        char l[12], v[12];
         if (!lab[k][0])
             continue;
+        ly_fit(l, lab[k], &FONT_S, 52);                  /* (a long preset name: cut to the card; */
+        ly_fit(v, val[k], vf, 52);                       /* ENGINE shows it whole in its title) */
         cv_card(cx - 28, 0, 56, 56);
         ly_dial(cx, 14, 11, ratio[k], C_HI, C_LINE);
-        cv_text(cx - text_w(&FONT_S, lab[k]) / 2, 24, &FONT_S, lab[k], C_GRAY);
-        cv_text(cx - text_w(vf, val[k]) / 2, 38, vf, val[k], hot);
+        cv_text(cx - text_w(&FONT_S, l) / 2, 24, &FONT_S, l, C_GRAY);
+        cv_text(cx - text_w(vf, v) / 2, 38, vf, v, hot);
     }
     cv_blit(0, 184);
 }
@@ -771,8 +784,12 @@ static void layer_screen_draw(void)
         tl[15].bg = C_SURF;
         tl[15].fg = C_GRAY;
         tl[15].top = C_DIM;
-        str_cpy(tr, "TRACK 1", sizeof tr);
-        tr[6] = (char)('1' + song.sel);
+        str_cpy(tr, "T1 ", sizeof tr);
+        tr[1] = (char)('1' + song.sel);
+        if (!drum) {                                    /* the preset's whole name (the PRST dial cuts it) */
+            const engine_t *e0 = ENGINES[t->eng_req % NENGINES];
+            str_cpy(tr + 3, e0->npresets ? e0->presets[t->preset % e0->npresets].name : "", sizeof tr - 3);
+        }
         sub = tr;
         if (drum) {
             lab[3] = "LVL";
