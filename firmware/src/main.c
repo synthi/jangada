@@ -6,6 +6,63 @@ extern uint32_t _data_start[], _data_end[], _data_load[], _bss_start[], _bss_end
 extern uint32_t _pool_start[], _pool_end[], _rt_start[], _rt_end[], _rt_load[];
 
 
+#if FELUCCA_UAC
+/* Jangada, from Felucca 1.0.1: with the USB audio input, TIMER5 outranks ALNK0. The stream cannot
+ * wait for the render (one packet per 1 ms USB frame; a 256-frame half renders for up to ~5 ms), so
+ * uac_service runs nested in it. It touches only EP4 (INDEX is set on every access) and the consumer
+ * side of the audio ring (usb.c); usb_poll never runs nested, so the two never interleave on the SIE.
+ * Nested, the tick also scans (fm1_input_tick: GPIO and fm1_in; the audio ISR only reads fm1_in.notes,
+ * one word, in seq.c keyboard_block) and counts ms (fm1_ms: one word, read by lk_put in the ISR);
+ * the scan keeps its 100 us pace instead of stopping for the whole render. USB and UART polls are owed
+ * to the first tick after the render (their rings are shared with the audio ISR, which they must not
+ * interrupt), and the time spent nested is handed to the audio ISR (t5_nested_ticks) so its load
+ * figures stay render-only. Without UAC (FELUCCA_UAC=0) TIMER5 stays below ALNK0, as before. */
+void fm1_timer5_irq(void)
+{
+    static uint32_t sub, owed;
+    uint32_t t0 = fm1_ticks(), usb_due = sub % 5u == 0u;
+    fm1_timer5_ack();
+    felucca_dbg.timer_irqs++;
+    fm1_input_tick();
+    {   /* milliseconds from the 24 MHz TIMER4 (robust to a late tick) */
+        static uint32_t last, acc;
+        acc += t0 - last;
+        last = t0;
+        while (acc >= 1000u * FM1_TICKS_PER_US) {
+            acc -= 1000u * FM1_TICKS_PER_US;
+            fm1_ms++;
+        }
+    }
+    if (usb_due)
+        owed |= 1u;                             /* 2 kHz: all USB SIE traffic lives here */
+#if FELUCCA_UART
+    if (sub % 5u == 2u)
+        owed |= 2u;                             /* 2 kHz: <= ~7 bytes per call at 31250 baud */
+#endif
+    if (++sub == 10u)
+        sub = 0;
+    if (felucca_dbg.in_audio) {
+        felucca_dbg.nested++;
+        if (usb_due)
+            uac_service();
+        t5_nested_ticks += fm1_ticks() - t0;
+        return;
+    }
+    if (owed & 1u)
+        usb_poll();
+#if FELUCCA_UART
+    if (owed & 2u)
+        uart_midi_poll();
+#endif
+    owed = 0;
+}
+extern void isr_timer5(void);
+
+static void timer5_start(void)                 /* OSC /4 = 6 MHz, PRD 600 -> 10 kHz */
+{
+    fm1_timer5_start(isr_timer5, 4);   /* above ALNK0 (3): nests into the render (see fm1_timer5_irq) */
+}
+#else
 void fm1_timer5_irq(void)
 {
     static uint32_t sub;
@@ -39,6 +96,7 @@ static void timer5_start(void)                 /* OSC /4 = 6 MHz, PRD 600 -> 10 
 {
     fm1_timer5_start(isr_timer5, 1);   /* below ALNK0 (3): no nesting into audio */
 }
+#endif
 
 static void hexs(char *b, uint32_t v)
 {
@@ -114,6 +172,9 @@ static void fm1_main(void)
     }
     felucca_dbg.boots++;
     felucca_dbg.max_us = 0;
+#if FELUCCA_UAC
+    felucca_dbg.in_audio = 0;                       /* a reset in the render leaves it set: TIMER5 would */
+#endif                                              /* take itself for nested (no usb_poll) until a half ends */
     felucca_dbg.prev_stage = felucca_dbg.stage;     /* a WDT reset leaves the last breadcrumb here */
     felucca_dbg.prev_page = felucca_dbg.page;
     felucca_dbg.prev_home = felucca_dbg.home;

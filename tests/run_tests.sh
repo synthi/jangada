@@ -16,6 +16,9 @@
 # After an intended change of the sound: GOLDEN_UPDATE=1 sh tests/run_tests.sh, review the diff
 # of tests/golden.txt, commit it with the change. After an intended change of the cost (or a new
 # compiler): BUDGET_UPDATE=1 (rewrites cpu_baseline.txt and target_budget.txt). VERBOSE=1: every render.
+# USB audio (tests/uac_test.c, from Felucca 1.0.1): the UAC1 descriptors as a host parses them (with and
+#                   without CDC), the ring and packetiser at the HALF_FRAMES of src/core.h: 44.1 frames per
+#                   packet, every frame in order, underrun / overrun, restart.
 set -e
 export AC79_SDK="${AC79_SDK:-$HOME/fw-AC79_AIoT_SDK}"
 cd "$(dirname "$0")/.."
@@ -35,6 +38,12 @@ run "user presets (UP_PUT parser, bank round trip, versions)" "$OUT/upreset_test
 
 $CC -o "$OUT/midi_uart_test" tests/midi_uart_test.c
 run "TRS MIDI parser" "$OUT/midi_uart_test"
+
+HALF=$(sed -n 's/^#define HALF_FRAMES \([0-9]*\).*/\1/p' firmware/src/core.h)
+$CC -DT_CDC=1 -DHALF_FRAMES=$HALF -o "$OUT/uac_test" tests/uac_test.c
+run "USB audio input: descriptors (with CDC), ring and packets" "$OUT/uac_test"
+$CC -DT_CDC=0 -DHALF_FRAMES=$HALF -o "$OUT/uac_test_nocdc" tests/uac_test.c
+run "USB audio input: descriptors (without CDC), ring and packets" "$OUT/uac_test_nocdc"
 
 $CC -o "$OUT/ota_test" tests/ota_test.c
 run "M-UPGRADE entry" "$OUT/ota_test" build/felucca.fwsc

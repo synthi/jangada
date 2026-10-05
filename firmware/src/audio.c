@@ -18,6 +18,9 @@ struct felucca_dbg {
     uint32_t prev_stage, prev_page, prev_home, prev_rst, prev_frames;   /* as found at boot */
 } felucca_dbg __attribute__((section(".noinit")));
 static volatile uint32_t audio_halves, audio_max_us;
+#if FELUCCA_UAC
+static volatile uint32_t t5_nested_ticks;              /* TIMER4 ticks TIMER5 spent nested in this ISR (main.c) */
+#endif
 #define SCOPE_N 512u
 static int16_t scope_buf[SCOPE_N];
 static uint32_t scope_w;
@@ -26,6 +29,9 @@ static void audio_block(int32_t *out, uint32_t n)       /* mix (fx.c), then Q15 
 {
     uint32_t i;
     mix_block(out, n);
+#if FELUCCA_UAC
+    uac_tap(out, n);                                    /* the USB audio input: the same master output (usb.c) */
+#endif
     for (i = 0; i < n; i++) {
         if (i & 1u)
             scope_buf[scope_w++ & (SCOPE_N - 1u)] = (int16_t)out[2u * i];
@@ -41,6 +47,17 @@ static void audio_block(int32_t *out, uint32_t n)       /* mix (fx.c), then Q15 
  * chord on a heavy engine thins out instead of starving the CPU. */
 static volatile uint8_t shed_req;
 static uint32_t shed_count;
+
+#if FELUCCA_UAC
+/* end of a half: all = its ticks, TIMER5 nested in it included (main.c). The deadline (the shed) sees
+ * both; the load figures get the render alone, in us (out of line: the ISR's loops stay as they were) */
+static __attribute__((noinline)) uint32_t shed_check(uint32_t all)
+{
+    if (all / FM1_TICKS_PER_US * 100u > (HALF_FRAMES * 1000000u / FS) * 85u)
+        shed_req = 1;
+    return (all - t5_nested_ticks) / FM1_TICKS_PER_US;
+}
+#endif
 
 static void shed_voice(void)
 {
@@ -75,10 +92,20 @@ static void shed_voice(void)
 
 void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) */
 {
+#if FELUCCA_UAC
+    uint8_t p;
+    uint32_t t0;
+    felucca_dbg.in_audio = 1;                   /* first: TIMER5 nests from here on (main.c) */
+    p = fm1_audio_pending();
+    t0 = fm1_ticks();
+    t5_nested_ticks = 0;
+    fm1_audio_ack_aux(p);
+#else
     uint8_t p = fm1_audio_pending();
     uint32_t t0 = fm1_ticks();
     fm1_audio_ack_aux(p);
     felucca_dbg.in_audio = 1;
+#endif
     if (p & FM1_AUDIO_HALF) {
         uint32_t half = fm1_audio_free_half(), b, us;
         int32_t *o = &abuf[half * HALF_WORDS];
@@ -86,15 +113,24 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
             shed_req = 0;
             shed_voice();
         }
+#if FELUCCA_UAC
+        uac_render_start();
+#endif
         for (b = 0; b < HALF_FRAMES; b += CTL)
             audio_block(o + 2u * b, CTL);
         fm1_audio_ack_half();
         audio_halves++;
+#if FELUCCA_UAC
+        us = shed_check(fm1_ticks() - t0);
+        if (us > audio_max_us)
+            audio_max_us = us;
+#else
         us = (fm1_ticks() - t0) / FM1_TICKS_PER_US;
         if (us > audio_max_us)
             audio_max_us = us;
         if (us * 100u > (HALF_FRAMES * 1000000u / FS) * 85u)
             shed_req = 1;
+#endif
         song.cpu_q8 = (song.cpu_q8 * 15u + (us * 256u) / (HALF_FRAMES * 1000000u / FS)) / 16u;
         if (fm1_audio_free_half() != half)
             felucca_dbg.late++;                         /* the DMA moved on while we rendered */

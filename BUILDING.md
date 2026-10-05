@@ -51,6 +51,8 @@ Build options (environment, `0` or `1`; defaults in `firmware/src/felucca.c`):
 | `FELUCCA_FLASH` | 1 | settings, presets and projects in flash |
 | `FELUCCA_OTA` | 1 | update entry (needs `FELUCCA_FLASH`) |
 | `FELUCCA_CDC` | 1 | USB serial console |
+| `FELUCCA_UAC` | 1 | USB audio input: the master output as a 16-bit stereo 44.1 kHz USB recording device (UAC1) |
+| `FELUCCA_UAC_TONE` | 0 | bench: the USB audio input sends test triangles instead of the music |
 | `FELUCCA_UART` | 0 | TRS MIDI IN (not tested on hardware) |
 
 ## Samples
