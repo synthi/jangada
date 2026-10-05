@@ -204,10 +204,10 @@ static const uint8_t STR0[4] = {4, 3, 0x09, 0x04};
 static const uint8_t STR1[] = {42, 3, 'H', 0, 0xFC, 0, 'g', 0, 'e', 0, 'l', 0, 't', 0, 'o', 0, 'n', 0, ' ', 0, 'I', 0,
                                'n', 0, 's', 0, 't', 0, 'r', 0, 'u', 0, 'm', 0, 'e', 0, 'n', 0, 't', 0, 's', 0};
 #ifdef FELUCCA_LOADER
-static const uint8_t STR2[] = {30, 3, 'F', 0, 'e', 0, 'l', 0, 'u', 0, 'c', 0, 'c', 0, 'a', 0, ' ', 0, 'U', 0, 'p', 0,
-                               'd', 0, 'a', 0, 't', 0, 'e', 0};
+static const uint8_t STR2[] = {30, 3, 'J', 0, 'a', 0, 'n', 0, 'g', 0, 'a', 0, 'd', 0, 'a', 0, ' ', 0, 'U', 0, 'p', 0,
+                               'd', 0, 'a', 0, 't', 0, 'e', 0};   /* Jangada: the product name (was Felucca) */
 #else
-static const uint8_t STR2[] = {16, 3, 'F', 0, 'e', 0, 'l', 0, 'u', 0, 'c', 0, 'c', 0, 'a', 0};
+static const uint8_t STR2[] = {16, 3, 'J', 0, 'a', 0, 'n', 0, 'g', 0, 'a', 0, 'd', 0, 'a', 0};   /* Jangada */
 #endif
 
 static int get_desc(uint32_t wvalue, const uint8_t **d, uint16_t *l)

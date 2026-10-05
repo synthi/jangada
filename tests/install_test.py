@@ -190,6 +190,8 @@ def cli(args, dev, answer=True):
 
 def wire():
     data = bytes(range(256)) * 3
+    ok(all(I.PORT_RE.search(n) for n in ("Jangada MIDI 1", "Jangada Update", "Felucca MIDI 1", "Felucca Update")),
+       "port names: Jangada (and Felucca, an older build)")
     ok(I.unpack7(I.pack7(data))[:len(data)] == data, "pack7 / unpack7 round trip")
     pkt = I.response(0x12345, b"\x01\x02\x03", fl=5)
     u = I.unpack7(pkt[1:-1])
