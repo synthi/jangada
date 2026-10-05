@@ -10,7 +10,7 @@ The build makes three files in `build/`:
 
 ## Prerequisites (macOS)
 
-- Python 3 with Pillow: `pip3 install Pillow`
+- Python 3 with Pillow and fontTools: `pip3 install Pillow fonttools`
 - Docker Desktop. The JieLi toolchain is Linux x86-64 only; the build runs each tool in a
   `linux/amd64` `debian:bookworm-slim` container (Rosetta on Apple silicon). Keep the source
   tree in a folder Docker can share, e.g. under `/Users`.
