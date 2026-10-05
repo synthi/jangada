@@ -494,7 +494,7 @@ static void persist_boot(void)                    /* before settings_init / pane
             settings.magic = SETTINGS_MAGIC;
             settings.palette = p.palette;
             settings.lowcut = p.lowcut;
-            settings.zoom = p.zoom;
+            settings.zoom = 0;                      /* Jangada: ZOOM left the menu (was p.zoom) */
             if (p.panel.magic == PANEL_MAGIC)
                 panel = p.panel;
             persist_saved = p;

@@ -89,6 +89,8 @@ static void felucca_init(void)
         track_defaults_steps(t);              /* the sequencers start empty */
     }
     song.sel = 0;
+    song.solo = 0;                              /* (Jangada: also NEW PROJECT, ui_menu.c) */
+    song.rec = 0;
     song.master_q12 = 2048;
     ui.home = 1;
     ui.force = 1;
