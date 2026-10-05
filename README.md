@@ -49,6 +49,37 @@ installs the `.fwsc` from the [releases](https://github.com/zednaked/jangada/rel
 
 ## What's new over Felucca
 
+### Performance: hold a button
+Tap a function button and its pages open, as always. **Hold** it and it becomes a **layer**: the 16
+white keys and the 4 knobs change job while it is held, and the screen shows the keys as 16 tiles
+(4 × 4) and the knobs as dials. **HOME** tapped while a layer is held **locks** it open (both hands
+free); any other button lets it go. PLAY, REC and OCT keep working inside it. Idea and much of the
+code from [SLOOP](https://github.com/isod89/sloop-fm1).
+
+| Hold | Keys | Knobs 1 · 2 · 3 · 4 |
+|---|---|---|
+| **FX**: punch | 16 effects on the whole mix while the key is held: loops 1/4 to 1/32, stutter, reverse, tape stop, half, LP / HP sweep, phone, crush, alias, gate, echo, wobble | FILT · DUST · DUCK |
+| **GLO**: mix | 1–4 mute, 5–8 solo, the last one tap tempo | levels of tracks 1–4 |
+| **SEQ**: steps | the 16 steps of the page: empty = set with the last note, set = press and release clears. Black keys: F# G# A# C# = page; D#4 / F#4 shift, G#4 / A#4 half / double, C#5 / D#5 transpose, **F#5 held erases** what the playhead passes | NOTE · DIV · SWG · LEN; steps held: NOTE · RTCH · CHNC · FLAG |
+| **SCL**: key | any key = the key of the song (every track) | CHRD · SCL · QNT · TRN |
+| **EDIT**: engine | 1–9 = the track's engine; the last one = track 4 DRUM / SYNTH | PRST · VOICE · GLIDE · LVL |
+
+With **SEQ** held, **OCT− / OCT+** = undo / redo of the pattern.
+
+### Master
+**GLO → MASTER** (and the FX layer's knobs): **DUST** (an old sampler and a record: bits, rate,
+crackle while playing), **DUCK** (the kick dips the synths for an eighth note), **FILT** (DJ
+filter: left low-pass, right high-pass).
+
+### One-key chords
+**SCL → CHORD** (or knob 1 of the SCL layer): OFF, TRIAD, 7TH, 9TH, SUS4, POWER. On, the white keys
+walk the scale from C4 and each plays the whole chord of the scale (recorded as a chord in the
+step). The track goes POLY by itself.
+
+### TRACKS
+**REC** on a page with nothing to record opens the tracks view: BPM, bar.beat, one row per track
+with the sound, the engine, the steps and the playhead, the level and the REC / SOLO / MUTE badges.
+
 ### Sound
 - **A bigger ANALOG** (EDIT 3 / 4): **SUPR** superwave (up to 6 detuned copies of the
   oscillator), **SDTN** spread, **SUB** a square an octave down, **DRFT** slow per-voice drift,
@@ -94,6 +125,8 @@ To sequence a drone: arp OFF, PATTERN **DIV 4BAR**, one chord a step (each step 
 | `tools/fm1_console.py preset E I [T]` | load preset I of engine E on track T |
 | `tools/fm1_console.py t4 synth\|drum` | track 4's type |
 | `tools/fm1_console.py droneoff` | as holding ARP |
+| `tools/fm1_console.py g ID [VALUE]` | read or set a global parameter (e.g. `g 28 90` = DUST) |
+| `tools/fm1_console.py punch N\|off` | start a punch-in effect (0–15) or stop it |
 | `tools/fm1_console.py color CHOQUE` | the screen palette |
 
 ## Build and test
@@ -124,7 +157,8 @@ Fixes that help everyone also go upstream to Felucca as pull requests.
 
 ## Credits and license
 
-Jangada is GPL-3.0-only, as Felucca is. The original work is **Leo Kuroshita's (@kurogedelic),
+The layers, punch FX, master and chords come from [SLOOP](https://github.com/isod89/sloop-fm1)
+(GPL-3.0), another Felucca fork. Jangada is GPL-3.0-only, as Felucca is. The original work is **Leo Kuroshita's (@kurogedelic),
 Hügelton Instruments** — see [README.felucca.md](README.felucca.md) and [LICENSING.md](LICENSING.md)
 for the full credits (fonts, samples, engines).
 

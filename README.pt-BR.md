@@ -49,6 +49,37 @@ também instala o `.fwsc` das [releases](https://github.com/zednaked/jangada/rel
 
 ## O que muda em relação ao Felucca
 
+### Performance: segure um botão
+Toque um botão de função e as páginas dele abrem, como sempre. **Segure** e ele vira uma
+**camada**: as 16 teclas brancas e os 4 knobs mudam de função enquanto ele está apertado, e a tela
+mostra as teclas como 16 tiles (4 × 4) e os knobs como dials. **HOME** tocado com a camada segurada
+a **trava** aberta (as duas mãos livres); qualquer outro botão a solta. PLAY, REC e OCT continuam
+valendo dentro dela. Ideia e boa parte do código do [SLOOP](https://github.com/isod89/sloop-fm1).
+
+| Segure | Teclas | Knobs 1 · 2 · 3 · 4 |
+|---|---|---|
+| **FX**: punch | 16 efeitos no mix inteiro enquanto a tecla está apertada: loops 1/4 a 1/32, stutter, reverse, tape stop, half, LP / HP sweep, phone, crush, alias, gate, echo, wobble | FILT · DUST · DUCK |
+| **GLO**: mix | 1–4 mute, 5–8 solo, a última tap tempo | nível das trilhas 1–4 |
+| **SEQ**: passos | os 16 passos da página: vazio = cria com a última nota, cheio = apertar e soltar apaga. Pretas: F# G# A# C# = página; D#4 / F#4 desloca, G#4 / A#4 metade / dobro, C#5 / D#5 transpõe, **F#5 segurada apaga** o que o playhead passa | NOTE · DIV · SWG · LEN; com passos segurados: NOTE · RTCH · CHNC · FLAG |
+| **SCL**: tom | qualquer tecla = o tom da música (todas as trilhas) | CHRD · SCL · QNT · TRN |
+| **EDIT**: motor | 1–9 = o motor da trilha; a última = trilha 4 DRUM / SYNTH | PRST · VOICE · GLIDE · LVL |
+
+Com **SEQ** segurado, **OCT− / OCT+** = undo / redo do padrão.
+
+### Master
+**GLO → MASTER** (e os knobs da camada FX): **DUST** (sampler velho e disco: bits, taxa, chiado
+enquanto toca), **DUCK** (o bumbo abaixa os synths por uma colcheia), **FILT** (filtro de DJ:
+esquerda passa-baixa, direita passa-alta).
+
+### Acordes de uma tecla
+**SCL → CHORD** (ou o knob 1 da camada SCL): OFF, TRIAD, 7TH, 9TH, SUS4, POWER. Ligado, as teclas
+brancas andam pela escala a partir do C4 e cada uma toca o acorde da escala inteiro (gravado como
+acorde no passo). A trilha passa a POLY sozinha.
+
+### TRACKS
+O **REC** numa página sem nada para gravar abre a tela de trilhas: BPM, compasso.beat, uma linha
+por trilha com o som, o motor, os passos e o playhead, o nível e os selos REC / SOLO / MUTE.
+
 ### Som
 - **ANALOG turbinado** (EDIT 3 / 4): **SUPR** superwave (até 6 cópias desafinadas do oscilador),
   **SDTN** abertura, **SUB** quadrada uma oitava abaixo, **DRFT** desafinação lenta por voz,
@@ -96,6 +127,8 @@ Para sequenciar um drone: arp OFF, PATTERN com **DIV 4BAR**, um acorde por passo
 | `tools/fm1_console.py t4 synth\|drum` | tipo da trilha 4 |
 | `tools/fm1_console.py droneoff` | como segurar ARP |
 | `tools/fm1_console.py color CHOQUE` | paleta da tela |
+| `tools/fm1_console.py g ID [VALOR]` | lê ou muda um parâmetro global (ex.: `g 28 90` = DUST) |
+| `tools/fm1_console.py punch N\|off` | liga um efeito punch (0–15) ou desliga |
 
 ## Compilar e testar
 
@@ -125,7 +158,8 @@ Correções que servem a todos vão também como pull request para o Felucca.
 
 ## Créditos e licença
 
-A Jangada é GPL-3.0-only, como o Felucca. O trabalho original é de **Leo Kuroshita (@kurogedelic),
+A Jangada é GPL-3.0-only, como o Felucca. As camadas, o punch FX, o master e os acordes vêm do
+[SLOOP](https://github.com/isod89/sloop-fm1) (GPL-3.0), outro fork do Felucca. O trabalho original é de **Leo Kuroshita (@kurogedelic),
 Hügelton Instruments**: veja [README.felucca.md](README.felucca.md) e [LICENSING.md](LICENSING.md)
 para os créditos completos (fontes, amostras, motores).
 
