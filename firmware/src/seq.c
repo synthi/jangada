@@ -386,7 +386,7 @@ static void input_off(track_t *t, uint32_t note)
 
 /* Jangada: the layer the keys belong to (ui_layers.c sets it: a layer button held or locked open).
  * LY_FX runs here (punch.c); the other layers' key-downs go to the UI through lk_q */
-enum { LY_NONE, LY_FX, LY_MIX, LY_STEP, LY_SCALE, LY_COUNT };
+enum { LY_NONE, LY_FX, LY_MIX, LY_STEP, LY_SCALE, LY_ENGINE, LY_COUNT };
 static volatile uint8_t kb_layer;
 #define LKQ 32u
 #define LK_UP 0x80u                                   /* lk_q: key index | LK_UP (a key-up) | layer << 8 */

@@ -9,6 +9,10 @@
  *         last, a set one is cleared when its key is let go, unless a knob edited it meanwhile; the
  *         first four black keys pick the page (steps 1-16 .. 49-64)
  *         knobs, no step held: NOTE (the pen)  DIV  SWING  LEN;  steps held: NOTE  RTCH  CHNC  FLAG
+ *         black keys from D#4: SHIFT < >, LEN 1/2 x2, TRN - +, F#5 held = ERASE (playing: the steps the
+ *         playhead passes; stopped: the whole pattern). OCT- / OCT+ while SEQ is held: undo / redo
+ *   EDIT  keys 1..10: the engine of the track (and its first preset); the last key: track 4 DRUM / SYNTH
+ *         knobs: PRESET (of the engine)  VOICE  GLIDE  LEVEL
  *   SCL   any key: the key of the song (ROOT of every synth track)
  *         knobs: CHORD (the track: one key plays a chord of the scale)  SCALE (every synth track)  QNT  TRN
  * HOME tapped while a layer button is held locks the layer open (both hands free); any other button
@@ -16,8 +20,8 @@
  * Colours: the palette's (CHOQUE by default), white for what is on. */
 #define TAP_MS 450u                                     /* a press shorter than this, untouched: a tap */
 #define SHOW_MS 140u                                    /* the layer shows after this (a tap does not flash it) */
-static const uint8_t LAYER_BTN[LY_COUNT] = {NB, B_FX, B_GLO, B_SEQ, B_SCL};
-static const char *const LAYER_NAME[LY_COUNT] = {"", "PUNCH", "MIX", "STEPS", "KEY"};
+static const uint8_t LAYER_BTN[LY_COUNT] = {NB, B_FX, B_GLO, B_SEQ, B_SCL, B_EDIT};
+static const char *const LAYER_NAME[LY_COUNT] = {"", "PUNCH", "MIX", "STEPS", "KEY", "ENGINE"};
 
 static struct {
     uint8_t btn;                 /* the layer whose button is held (0 none) */
@@ -32,6 +36,13 @@ static struct {
     uint8_t page;                /* SEQ: steps page * 16 .. */
     uint16_t held;               /* SEQ: step keys down (white key bits) */
     uint16_t pend_off;           /* SEQ: steps that clear when their key is let go */
+    uint8_t erase;               /* SEQ: the ERASE key is down */
+    uint8_t snap;                /* SEQ: this hold of SEQ took its undo snapshot */
+    struct {                     /* SEQ: one level of undo of a track's pattern */
+        uint8_t valid, undone, trk;
+        int16_t len;
+        step_t step[NSTEP];
+    } undo;
 } ly;
 
 static uint32_t layer_now(void) { return ly.lock ? ly.lock : ly.btn; }
@@ -68,6 +79,107 @@ static void tap_tempo(uint32_t now)
 /* --------------------------------------------------------------- SEQ --- */
 static uint32_t trk_len(const track_t *t) { return t->p[P_SLEN] > 0 ? (uint32_t)t->p[P_SLEN] : 1u; }
 
+/* undo: the pattern as it was before this hold of SEQ changed it (one level); undo and redo swap it */
+static void undo_mark(void)
+{
+    if (ly.snap)
+        return;
+    ly.snap = 1;
+    ly.undo.valid = 1;
+    ly.undo.undone = 0;
+    ly.undo.trk = song.sel;
+    ly.undo.len = TSEL->p[P_SLEN];
+    memcpy(ly.undo.step, TSEL->step, sizeof ly.undo.step);
+}
+
+static void undo_swap(int redo)
+{
+    track_t *t = &trk[ly.undo.trk % NTRK];
+    static step_t tmp[NSTEP];
+    int16_t len;
+    if (!ly.undo.valid || ly.undo.undone != (uint8_t)redo) {
+        ui_message(redo ? "NOTHING TO REDO" : "NOTHING TO UNDO");
+        return;
+    }
+    fm1_irq_off();
+    memcpy(tmp, t->step, sizeof tmp);
+    memcpy(t->step, ly.undo.step, sizeof tmp);
+    memcpy(ly.undo.step, tmp, sizeof tmp);
+    len = t->p[P_SLEN];
+    t->p[P_SLEN] = ly.undo.len;
+    ly.undo.len = len;
+    fm1_irq_on();
+    ly.undo.undone = (uint8_t)!redo;
+    ly.snap = 0;                                        /* (the next edit: a new snapshot; no redo after it) */
+    ui_message(redo ? "REDO" : "UNDO");
+}
+
+/* the pattern tools (black keys of the SEQ layer) */
+static void pattern_tool(uint32_t tool)
+{
+    track_t *t = TSEL;
+    uint32_t len = trk_len(t), i, j;
+    step_t keep;
+    char b[8];
+    undo_mark();
+    fm1_irq_off();
+    switch (tool) {
+    case 0:                                             /* SHIFT <: every step one earlier */
+        keep = t->step[0];
+        for (i = 0; i + 1u < len; i++)
+            t->step[i] = t->step[i + 1u];
+        t->step[len - 1u] = keep;
+        break;
+    case 1:                                             /* SHIFT >: every step one later */
+        keep = t->step[len - 1u];
+        for (i = len - 1u; i > 0; i--)
+            t->step[i] = t->step[i - 1u];
+        t->step[0] = keep;
+        break;
+    case 2:                                             /* LEN 1/2 */
+        if (len >= 2u)
+            t->p[P_SLEN] = (int16_t)(len / 2u);
+        break;
+    case 3:                                             /* LEN x2: the pattern again after itself */
+        if (len * 2u <= NSTEP) {
+            for (i = 0; i < len; i++)
+                t->step[len + i] = t->step[i];
+            t->p[P_SLEN] = (int16_t)(len * 2u);
+        }
+        break;
+    default:                                            /* TRN - / +: every note a semitone */
+        if (!is_drum(t))
+            for (i = 0; i < NSTEP; i++)
+                for (j = 0; j < t->step[i].n && j < 4u; j++)
+                    t->step[i].note[j] = (uint8_t)clamp(t->step[i].note[j] + (tool == 4u ? -1 : 1), 1, 127);
+        break;
+    }
+    fm1_irq_on();
+    if (ly.page * 16u >= trk_len(t))
+        ly.page = (uint8_t)((trk_len(t) - 1u) / 16u);
+    if (tool == 2u || tool == 3u) {
+        fmt_int(b, t->p[P_SLEN]);
+        ui_say("STEPS ", b);
+    } else {
+        static const char *const M[6] = {"SHIFT <", "SHIFT >", "", "", "TRANSPOSE -", "TRANSPOSE +"};
+        ui_message(M[tool]);
+    }
+}
+
+/* ERASE held: playing, the step under the playhead goes as it passes; stopped, the whole pattern */
+static void erase_tick(void)
+{
+    track_t *t = TSEL;
+    if (!ly.erase || !song.playing)
+        return;
+    if (t->seq_idx < trk_len(t) && t->step[t->seq_idx].n) {
+        undo_mark();
+        fm1_irq_off();
+        step_clear(&t->step[t->seq_idx]);
+        fm1_irq_on();
+    }
+}
+
 static void step_down(uint32_t w)
 {
     track_t *t = TSEL;
@@ -79,6 +191,7 @@ static void step_down(uint32_t w)
         ly.pend_off |= (uint16_t)(1u << w);
         return;
     }
+    undo_mark();
     fm1_irq_off();
     st->note[0] = last_note;
     st->n = 1;
@@ -96,6 +209,7 @@ static void step_up(uint32_t w)
         return;
     ly.pend_off &= (uint16_t)~(1u << w);
     if (idx < trk_len(t)) {
+        undo_mark();
         fm1_irq_off();
         step_clear(&t->step[idx]);
         fm1_irq_on();
@@ -108,6 +222,7 @@ static void steps_held_edit(uint32_t k, int32_t s)
     track_t *t = TSEL;
     uint32_t w, i;
     ly.pend_off &= (uint16_t)~ly.held;                  /* edited: kept when let go */
+    undo_mark();
     fm1_irq_off();
     for (w = 0; w < 16u; w++) {
         uint32_t idx = ly.page * 16u + w;
@@ -132,10 +247,33 @@ static void layer_key(uint32_t layer, uint32_t k, uint32_t down, uint32_t now)
 {
     int32_t w = punch_key(k);                           /* white key 0..15, -1 black */
     if (layer == LY_STEP) {
-        if (w < 0) {                                    /* the first four black keys: pages 1..4 */
+        if (w < 0) {                                    /* black keys: pages 1..4, then the tools */
             static const int8_t PG[12] = {-1, 0, -1, 1, -1, 2, -1, -1, 3, -1, -1, -1};
-            if (down && k < 12u && PG[k] >= 0 && (uint32_t)PG[k] * 16u < trk_len(TSEL))
-                ly.page = (uint8_t)PG[k];
+            if (k == 25u) {                             /* F#5: ERASE while held */
+                ly.erase = (uint8_t)down;
+                if (down && !song.playing) {
+                    uint32_t i;
+                    undo_mark();
+                    fm1_irq_off();
+                    for (i = 0; i < NSTEP; i++)
+                        step_clear(&TSEL->step[i]);
+                    fm1_irq_on();
+                    ui_message("PATTERN ERASED");
+                }
+                return;
+            }
+            if (!down)
+                return;
+            if (k < 12u && PG[k] >= 0) {
+                if ((uint32_t)PG[k] * 16u < trk_len(TSEL))
+                    ly.page = (uint8_t)PG[k];
+            } else {                                    /* D#4 F#4 G#4 A#4 C#5 D#5: the tools 0..5 */
+                static const uint8_t TOOL_KEY[6] = {10, 13, 15, 17, 20, 22};
+                uint32_t i;
+                for (i = 0; i < 6u; i++)
+                    if (TOOL_KEY[i] == k)
+                        pattern_tool(i);
+            }
             return;
         }
         if (down) {
@@ -144,6 +282,19 @@ static void layer_key(uint32_t layer, uint32_t k, uint32_t down, uint32_t now)
         } else {
             ly.held &= (uint16_t)~(1u << w);
             step_up((uint32_t)w);
+        }
+        return;
+    }
+    if (layer == LY_ENGINE) {                           /* keys 1..NENGINES: the engine; the last: T4 type */
+        if (!down || w < 0)
+            return;
+        if (w == 15) {
+            song.g[G_T4] = (int16_t)!song.g[G_T4];      /* ui.c t4_follow does the rest */
+        } else if ((uint32_t)w < NENGINES) {
+            if (is_drum(TSEL))
+                ui_message("DRUM TRACK");
+            else
+                select_engine((uint32_t)w);
         }
         return;
     }
@@ -208,10 +359,18 @@ static void layers_input(uint32_t *pressed, uint32_t now)
         ly.btn = (uint8_t)l;
         ly.t0 = now;
         ly.used = 0;
+        ly.snap = 0;                                    /* SEQ: a new hold, a new undo step */
     }
     if (ly.btn && !((fm1_in.buttons >> panel.btn[LAYER_BTN[ly.btn]]) & 1u)) {   /* let go */
-        if (!ly.used && !ly.lock && now - ly.t0 < TAP_MS)
-            open_family(fam_of_btn(LAYER_BTN[ly.btn]));  /* a tap: its pages */
+        if (!ly.used && !ly.lock && now - ly.t0 < TAP_MS) {   /* a tap: its pages */
+            if (ly.btn == LY_ENGINE && song.seq_mode && cur_page()->scope == SC_STEP) {
+                step_clear(&TSEL->step[ui.cursor]);     /* (EDIT on a STEP page: clears the step) */
+                cursor_set(ui.cursor + 1);
+                ui_message("STEP CLEARED");
+            } else {
+                open_family(fam_of_btn(LAYER_BTN[ly.btn]));
+            }
+        }
         ly.btn = 0;
         ui.force = 1;
     }
@@ -229,6 +388,14 @@ static void layers_input(uint32_t *pressed, uint32_t now)
             if ((*pressed >> id) & 1u)
                 ly.used = 1;
     }
+    if (layer_now() == LY_STEP) {                       /* SEQ: OCT- undo, OCT+ redo (not the octave) */
+        uint32_t dn = 1u << panel.btn[B_OCTDN], upb = 1u << panel.btn[B_OCTUP];
+        if (*pressed & (dn | upb)) {
+            undo_swap((*pressed & upb) != 0u);
+            *pressed &= ~(dn | upb);
+            ly.used = 1;
+        }
+    }
     kb_layer = (uint8_t)layer_now();
     while (lk_r != lk_w) {                              /* the layer keys from the ISR */
         uint32_t v = lk_q[lk_r % LKQ], t = lk_t[lk_r % LKQ], k = (v & 0x7Fu) % 27u, up = (v & LK_UP) != 0u;
@@ -237,6 +404,9 @@ static void layers_input(uint32_t *pressed, uint32_t now)
             ly.klay[k] = (uint8_t)(v >> 8);
         layer_key(ly.klay[k], k, !up, t);
     }
+    if (!kb_layer)
+        ly.erase = 0;
+    erase_tick();
 }
 
 /* KNOB 1..4 while a layer is held: what the layer gives them (the page does not see them) */
@@ -260,6 +430,25 @@ static void layers_knobs(uint32_t layer)
         } else if (layer == LY_MIX) {
             int16_t *lv = trk_level_p(k);
             *lv = (int16_t)clamp(*lv + accel(EN_K1 + k, s, 127), 0, 127);
+        } else if (layer == LY_ENGINE) {
+            track_t *t = TSEL;
+            const engine_t *e = ENGINES[t->eng_req % NENGINES];
+            if (is_drum(t)) {
+                if (k == 3u)
+                    song.g[G_DRLVL] = (int16_t)clamp(song.g[G_DRLVL] + accel(EN_K4, s, 127), 0, 127);
+            } else if (k == 0u && e->npresets) {        /* the engine's presets */
+                uint32_t n = e->npresets;
+                apply_preset((t->preset + (s > 0 ? 1u : n - 1u)) % n);
+                ui.force = 1;
+            } else if (k == 1u) {
+                t->p[P_VOICE] = (int16_t)clamp(t->p[P_VOICE] + (s > 0 ? 1 : -1), 0, 3);
+                panic_req |= (uint8_t)(1u << song.sel);
+            } else if (k == 2u) {
+                const param_desc_t *d = &TP[P_GLIDE];
+                t->p[P_GLIDE] = (int16_t)clamp(t->p[P_GLIDE] + accel(EN_K3, s, d->max - d->min), d->min, d->max);
+            } else if (k == 3u) {
+                t->p[P_LEVEL] = (int16_t)clamp(t->p[P_LEVEL] + accel(EN_K4, s, 127), 0, 127);
+            }
         } else if (layer == LY_SCALE) {
             track_t *t = TSEL;
             if (k == 1u) {                              /* the scale: every synth track */
@@ -305,6 +494,8 @@ static uint32_t layers_key_leds(void)
             on = punch.req == (int8_t)w || (punch.req < 0 && (w & 3u) == 0u);
         else if (layer == LY_MIX)
             on = w < 4u ? !trk[w].p[P_MUTE] : w < 8u ? (int)((song.solo >> (w - 4u)) & 1u) : w == 15u;
+        else if (layer == LY_ENGINE)                    /* the track's engine; T4 SYNTH */
+            on = w == 15u ? song.g[G_T4] != 0 : !is_drum(TSEL) && w == TSEL->eng_req;
         else if (layer == LY_SCALE)                     /* the root's keys */
             on = (53u + key_of_white(w)) % 12u == (uint32_t)TSEL->p[P_ROOT] % 12u;
         else if (layer == LY_STEP) {                    /* the set steps; the playhead blinks off */
@@ -559,6 +750,47 @@ static void layer_screen_draw(void)
             ratio[1] = (t->p[P_SDIV] - TP[P_SDIV].min) * 1000 / (TP[P_SDIV].max - TP[P_SDIV].min);
             ratio[2] = t->p[P_SSWING] * 10;
             ratio[3] = ((int32_t)len - 1) * 1000 / 63;
+        }
+    }
+    else if (layer == LY_ENGINE) {                      /* the engines; the selected one lit */
+        static char tr[24];
+        track_t *t = TSEL;
+        int drum = is_drum(t);
+        for (i = 0; i < 16u; i++) {
+            tl[i].bg = C_BLACK;
+            tl[i].fg = C_DIM;
+            if (i < NENGINES) {
+                int on = !drum && i == t->eng_req;
+                str_cpy(tl[i].lab, ENGINES[i]->name, 8);
+                tl[i].bg = on ? C_WHITE : C_LINE;
+                tl[i].fg = on ? C_BLACK : drum ? C_DIM : C_AMB;
+            }
+        }
+        str_cpy(tl[15].lab, song.g[G_T4] ? "T4 SYN" : "T4 DRM", 8);
+        tl[15].bg = C_LINE;
+        tl[15].fg = C_GRAY;
+        tl[15].top = C_DIM;
+        str_cpy(tr, "TRACK 1", sizeof tr);
+        tr[6] = (char)('1' + song.sel);
+        sub = tr;
+        if (drum) {
+            lab[3] = "LVL";
+            fmt_int(v[3], song.g[G_DRLVL] * 100 / 127);
+            ratio[3] = song.g[G_DRLVL] * 1000 / 127;
+            sub = "DRUM TRACK";
+        } else {
+            const engine_t *e = ENGINES[t->eng_req % NENGINES];
+            const char *u;
+            static const char *const VM[4] = {"POLY", "MONO", "LEG", "UNI"};
+            lab[0] = "PRST", lab[1] = "VOICE", lab[2] = "GLIDE", lab[3] = "LVL";
+            str_cpy(v[0], e->npresets ? e->presets[t->preset % e->npresets].name : "-", 10);
+            str_cpy(v[1], VM[t->p[P_VOICE] & 3], 10);
+            param_format(&TP[P_GLIDE], t->p[P_GLIDE], v[2], &u);
+            fmt_int(v[3], t->p[P_LEVEL] * 100 / 127);
+            ratio[0] = e->npresets > 1u ? (int32_t)(t->preset % e->npresets) * 1000 / (e->npresets - 1) : 0;
+            ratio[1] = (t->p[P_VOICE] & 3) * 333;
+            ratio[2] = (t->p[P_GLIDE] - TP[P_GLIDE].min) * 1000 / (TP[P_GLIDE].max - TP[P_GLIDE].min ? TP[P_GLIDE].max - TP[P_GLIDE].min : 1);
+            ratio[3] = t->p[P_LEVEL] * 1000 / 127;
         }
     }
     else if (layer == LY_SCALE) {                       /* the white keys' notes / chords; the root lit */
