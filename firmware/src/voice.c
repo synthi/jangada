@@ -510,10 +510,20 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
             continue;
         {
             env = env_tick(t, v);
+            if (e->ownenv && v->active) {               /* Jangada: the engine's envelopes (FM6) end the voice */
+                if (e->done(t, v)) {
+                    v->active = v->gate = 0;
+                    v->stage = 0;
+                    v->env = v->env_out = 0;
+                    continue;
+                }
+                v->env = 1 << 24;                       /* (the ADSR's release never ends it) */
+                env = 32767;
+            }
             if (e->amp)                                 /* the engine's own amplitude curve */
                 env = e->amp(t, v, env);
-            m.envq15 = env;
-            m.amp1 = mulq15(env, v->vel * 258);
+            m.envq15 = e->ownenv ? 0 : env;
+            m.amp1 = e->ownenv ? env : mulq15(env, v->vel * 258);
             if (p[P_LD_AMP])
                 m.amp1 = mulq15(m.amp1, 32767 - mulq15((lfo + 32768) >> 1, p[P_LD_AMP] * 258));
             if (fade)                                   /* linear to 0 over the fade */
@@ -537,6 +547,7 @@ static uint32_t track_render(track_t *t, int32_t *out, uint32_t n)
                     t->bend16;                          /* (Jangada: MIDI pitch bend) */
             m.pitch16 = clamp(pitch, 0, 2047);
             m.inc = PITCH_INC[m.pitch16];
+            m.fine = v->fine + tune_fine;                   /* (Jangada: FM6 takes it as it is) */
             if (v->fine + tune_fine)                        /* unison detune and fine tune, below 1/16 st */
                 m.inc += (uint32_t)((int32_t)(m.inc >> 12) * (v->fine + tune_fine));
             m.cutoff = ((lfo * p[P_LD_FLT]) >> 7) + ((m.envq15 * p[P_ED_FLT]) >> 7);

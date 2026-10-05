@@ -17,7 +17,8 @@ enum { V_POLY, V_MONO, V_LEGATO, V_UNISON };   /* P_VOICE */
 #ifndef FELUCCA_SLICE
 #define FELUCCA_SLICE 0          /* the SLICE engine (eng_slice.c): kept in the tree, not built by default */
 #endif
-#define NENGINES (9 + FELUCCA_SLICE)   /* SLICE, when built, comes last: the other engines keep their numbers */
+#define NENGINES (10 + FELUCCA_SLICE)  /* SLICE, when built, comes last: the other engines keep their numbers
+                                        * (Jangada: FM6 is 9) */
 #define UP_SLOTS 32u             /* user presets (upreset.c) */
 
 /* ------------------------------------------------------- parameters --- */
@@ -99,6 +100,7 @@ typedef struct {                 /* per-voice control-rate modulation, computed 
     int32_t cutoff;              /* 0..127 << 8 */
     int32_t shape;               /* 0..127 << 8 */
     int32_t envq15;              /* env value (for engines that use it as a mod source) */
+    int32_t fine;                /* Jangada: below 1/16 semitone (unison detune + tune), 1/4096: FM6 */
 } vmod_t;
 
 typedef struct {
@@ -142,6 +144,10 @@ typedef struct {
     const param_desc_t *(*desc)(const struct track *t, uint32_t k);
     /* optional: once per block and part, before its voices (also with no voice sounding) */
     void (*block)(struct track *t);
+    /* Jangada (after Felucca 1.0): the engine's own envelopes are the amplitude (no ADSR, no velocity
+     * scaling) and done() ends the voice (FM6) */
+    uint8_t ownenv;
+    int (*done)(struct track *t, voice_t *v);
 } engine_t;
 
 /* ------------------------------------------------------------ track --- */

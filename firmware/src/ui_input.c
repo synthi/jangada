@@ -312,6 +312,7 @@ static void ui_input(void)
     if (pressed || notes || fm1_in.buttons || fm1_in.notes)
         ui_input_ms = fm1_ms;                           /* Jangada: not idle (project.c autosave) */
     layers_input(&pressed, fm1_ms);                     /* Jangada: FX / GLO tap, hold, lock (ui_layers.c) */
+    fm6_poll();                                         /* Jangada: FM6 PTCH turned -> its patch */
     /* Jangada: the punch-in effect's name on screen when one starts (ui_layers.c: the FX layer) */
     if (punch.req != punch_shown) {
         punch_shown = punch.req;

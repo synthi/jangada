@@ -16,7 +16,7 @@ import sys
 
 FUNCS = ["analog_render", "analog_render_lp", "analog_render_x", "digital_render", "phase_render", "lofi_render", "sample_render", "formant_render",
          "trio_render", "trio_pass", "drawbar_render", "drawbar_block",
-         "grain_render", "grain_block", "slicer_track", "drums_mix", "mix_block",
+         "grain_render", "grain_block", "slicer_track", "drums_mix", "mix_block", "fm6_op_run", "fm6_render",
          "fm1_alnk0_irq"]
 TOL = 0.10                      # exact (no noise): small edits pass, a grown render loop does not
 DIV_W = 8                       # a divide weighs 1 + 8 instructions

@@ -96,7 +96,8 @@ def generate():
             [tools / "gen_icons.py", GEN / "felucca_icons.h"],
             [tools / "gen_tables.py", GEN / "felucca_tables.h"],
             [tools / "gen_samples.py", GEN / "felucca_samples.h"],
-            [tools / "gen_drumkits.py", GEN / "felucca_drumkits.h"]]   # Jangada: synthesised kits (after SLOOP)
+            [tools / "gen_drumkits.py", GEN / "felucca_drumkits.h"],
+            [tools / "gen_fm6_patches.py", GEN / "felucca_fm6.h"]]   # Jangada: FM6 (after Felucca 1.0)   # Jangada: synthesised kits (after SLOOP)
     procs = [subprocess.Popen([sys.executable, *map(str, c)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                               text=True) for c in cmds]
     failed = []
