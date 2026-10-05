@@ -24,6 +24,7 @@ static const char *const N_CLOCK[] = {"INT", "USB"};   /* Jangada: USB = follow 
 static const char *const N_SYNC[] = {"OFF", "OUT"};    /* Jangada: OUT = send MIDI clock (USB) */
 static const char *const N_CHORD[] = {"OFF", "TRIAD", "7TH", "9TH", "SUS4", "POWER"};   /* seq.c CHORD_DEG (Jangada) */
 static const char *const N_KIT[] = {"GM", DS_KIT_NAME_LIST};   /* drums.c DRUM_KIT_NAMES (Jangada) */
+static const char *const N_RTYPE[] = {"ROOM", "SPRING", "PLATE"};   /* fx.c (Jangada) */
 static const char *const N_NOTE[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 static const char *const N_DASH[] = {"--"};
 static const char *const N_GO[] = {"--", "GO"};
@@ -129,6 +130,7 @@ static const param_desc_t GP[G_COUNT] = {
     [G_DUCK] = PD("DUCK", F_PCT, 0, 127, 0),
     [G_FILT] = PD("FILT", F_BIPCT, -64, 63, 0),
     [G_KIT] = PE("KIT", N_KIT, 0),                     /* Jangada: the drum track's kit */
+    [G_RTYPE] = PE("TYPE", N_RTYPE, 0),                /* Jangada: the reverb model */
 };
 
 static const param_desc_t *track_desc(const track_t *t, uint32_t id)
@@ -276,6 +278,7 @@ static const page_t PAGES[] = {
     {"SLICER", FAM_FX, SC_TRACK, GR_SLCR, {P_SLCR, P_SLPAT, P_SLRATE, P_SLDEPTH}},   /* drum track too */
     {"DLY", FAM_FX, SC_GLOBAL, GR_NONE, {G_DTIME, G_DFDBK, G_DCOLOR, G_DMIX}},
     {"REV/CHO", FAM_FX, SC_GLOBAL, GR_NONE, {G_RSIZE, G_RDAMP, G_CRATE, G_CDEPTH}},
+    {"REVERB", FAM_FX, SC_GLOBAL, GR_NONE, {G_RTYPE, G_RSIZE, G_RDAMP, 0xFF}},   /* Jangada: ROOM SPRING PLATE */
     {"SCL", FAM_SCL, SC_TRACK, GR_SCALE, {P_ROOT, P_SCALE, P_QUANT, P_TRANS}},
     {"CHORD", FAM_SCL, SC_TRACK, GR_NONE, {P_CHORD, 0xFF, 0xFF, 0xFF}},   /* Jangada: one key, a chord */
     {"EDIT 1", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E0, P_E1, P_E2, P_E3}},

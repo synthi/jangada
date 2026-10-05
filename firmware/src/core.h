@@ -75,6 +75,7 @@ enum {                          /* global parameters */
     G_DUST, G_DUCK, G_FILT,     /* Jangada (after SLOOP): the master bus, fx.c: an old sampler and a record,
                                  * the kick ducking the synth parts, the DJ filter (< 0 LP, > 0 HP) */
     G_KIT,                      /* Jangada: the drum track's kit: 0 GM (samples), 1.. synthesised (drum_synth.c) */
+    G_RTYPE,                    /* Jangada: the reverb model: 0 ROOM, 1 SPRING (Felucca 1.0), 2 PLATE (SLOOP's FDN) */
     G_COUNT
 };
 

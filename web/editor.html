@@ -1055,6 +1055,7 @@ function makeMockDevice(opt = {}) {
     D("ENG", F.ENUM, 0, 8, 0, ["ANALOG", "DIGITAL", "PHASE", "LOFI", "SAMPLE", "VOICE", "TRIO", "WHEEL", "GRAIN"]), D("SET", F.ENUM, 0, 1, 0, ["--", "GO"]), D("CLRSQ", F.ENUM, 0, 1, 0, ["--", "GO"]), D("INIT", F.ENUM, 0, 1, 0, ["--", "GO"]),
     D("CH", F.INT, 0, 16, 10), D("LVL", F.INT, 0, 127, 100), D("REV", F.INT, 0, 127, 16), D("T4", F.ENUM, 0, 1, 0, ["DRUM", "SYNTH"]),
     D("DUST", F.PCT, 0, 127, 0), D("DUCK", F.PCT, 0, 127, 0), D("FILT", F.BIPCT, -64, 63, 0), D("KIT", F.ENUM, 0, 32, 0, ["GM", "808", "909", "606", "80S", "VINTAGE", "TRAP", "DRILL", "BOOMBAP", "LO-FI", "PHONK", "HOUSE", "D.HOUSE", "TECHNO", "MINIMAL", "ELECTRO", "DISCO", "GARAGE", "JUNGLE", "DUBSTEP", "DEMBOW", "AMAPIANO", "AFRO", "LATIN", "TRIBAL", "SYNTHWV", "CHIP", "ARCADE", "GLITCH", "INDUSTR", "HYPER", "AMBIENT", "JAZZ"]),
+    D("TYPE", F.ENUM, 0, 2, 0, ["ROOM", "SPRING", "PLATE"]),
   ];
   const P = (name, e, env = [10, 70, 90, 60], mono = 0, pat = 0) => ({ name, e, env, mono, pat });
   const ENG = [
@@ -1201,7 +1202,7 @@ function makeMockDevice(opt = {}) {
         P("ORGAN", [0, 0, 0, 0, 0, 0, 0, 6, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 127, 0], 0, 6),
         P("PLUCK", [0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 127, 0], 0, 13)] },
   ];
-  const P_COUNT = 78, G_COUNT = 32, NSTEP = 64, P_E0 = 62, NEDIT = 16, G_ENGSEL = 20, P_SLCR = 45;
+  const P_COUNT = 78, G_COUNT = 33, NSTEP = 64, P_E0 = 62, NEDIT = 16, G_ENGSEL = 20, P_SLCR = 45;
   /* </generated> */
   /* factory PATTERNS[] (ui.c): absolute notes, 0 rest; flags 1 accent, 2 slide, 4 tie (holds the previous note) */
   const T_ = 4;
@@ -1883,7 +1884,7 @@ function selfLoad() {
 const stepEdit = new Map(); /* index -> time of the last edit */
 
 /* parameter ids (firmware/src/core.h); used only when P_COUNT / G_COUNT match */
-const EXPECT = { pcount: 78, gcount: 32, pe0: 62 };   /* tools/gen_editor_tables.py --check: == the firmware */
+const EXPECT = { pcount: 78, gcount: 33, pe0: 62 };   /* tools/gen_editor_tables.py --check: == the firmware */
 const P = { LEVEL: 0, SLEN: 29 };
 const LAYOUT = (pe0) => [
   { t: "ENV", pages: [["ENV", 0, [1, 2, 3, 4]], ["ENV DEST", 0, [5, 6, 7, 8]]] },
@@ -1892,7 +1893,7 @@ const LAYOUT = (pe0) => [
   { t: "EDIT", engine: true, pages: [["EDIT 1", 0, [pe0, pe0 + 1, pe0 + 2, pe0 + 3]], ["EDIT 2", 0, [pe0 + 4, pe0 + 5, pe0 + 6, pe0 + 7]],
     ["EDIT 3", 0, [pe0 + 8, pe0 + 9, pe0 + 10, pe0 + 11]], ["EDIT 4", 0, [pe0 + 12, pe0 + 13, pe0 + 14, pe0 + 15]]] },
   { t: "VOICE", pages: [["LEVEL", 0, [0]], ["VOICE", 0, [37, 38, 41, 42]], ["VOICE 2", 0, [43, 44, 39, 40]]] },
-  { t: "FX", pages: [["FX", 0, [33, 34, 35, 36]], ["SLICER", 0, [45, 46, 47, 48]], ["DLY", 1, [4, 5, 6, 7]], ["REV/CHO", 1, [8, 9, 10, 11]]] },
+  { t: "FX", pages: [["FX", 0, [33, 34, 35, 36]], ["SLICER", 0, [45, 46, 47, 48]], ["DLY", 1, [4, 5, 6, 7]], ["REV/CHO", 1, [8, 9, 10, 11]], ["REVERB", 1, [32, 8, 9]]] },   /* Jangada: TYPE */
   { t: "SCL", pages: [["SCL", 0, [25, 26, 27, 28]], ["CHORD", 0, [61]]] },   /* Jangada: CHORD */
   { t: "ARP", pages: [["ARP", 0, [17, 18, 19, 20]], ["ARP 2", 0, [21, 22, 23, 24]]] },
   { t: "SEQ PATTERN", tab: "seqgroups", pages: [["PATTERN", 0, [29, 30, 31, 32]]] },
