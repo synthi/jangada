@@ -9,7 +9,7 @@
 
 # Jangada 🛶
 
-**Alternative firmware for the M-VAVE FM-1** — nine synth engines, a superwave analog, a
+**Alternative firmware for the M-VAVE FM-1** — ten synth engines (6-operator FM among them), a superwave analog, a
 modulation matrix, latched drones, ratchets and four tracks, on a €70 pocket synth.
 A fork of [Felucca](https://github.com/hugelton/Felucca) by Leo Kuroshita (Hügelton Instruments).
 A *felucca* is a Nile sailboat; a *jangada* is the Brazilian one.
