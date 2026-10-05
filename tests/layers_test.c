@@ -1,11 +1,15 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
 /* Jangada: the layers (firmware/src/ui_layers.c) on the host, with the UI code and a framebuffer in
  * place of the LCD: the SEQ layer's step keys, pattern tools and undo / redo, the ENGINE keys, and
- * every layer's screen draws. Build: cc -Ibuild/gen -Ifirmware/src tests/layers_test.c -lm */
+ * every layer's screen draws; and the page columns (ui_draw.c draw_column, Inter Tight on cards): no
+ * label, value or unit of any page, engine or value is cut to fit its card.
+ * Build: cc -Ibuild/gen -Ifirmware/src tests/layers_test.c -lm */
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+static int ncut;
+#define UI_HOOK_CUT(src, maxw) (ncut++ < 20 ? printf("cut to %d px: '%s'\n", (int)(maxw), (src)) : 0)
 #include <math.h>
 #define __attribute__(x)
 #define memset felucca_memset
@@ -120,4 +124,28 @@ int main(void){
    ly.btn = 0; ui_draw(); assert(!ly.shown);
  }
  printf("%-46s ok\n", "layers: every screen draws, in every palette");
+ { /* every page of every engine, every value (sampled) of every column: nothing cut */
+   uint32_t e, pi, c;
+   palette_set(5); ui.home = 0; song.sel = 0;
+   for (e = 0; e < NENGINES; e++) {
+     set_engine_of(&trk[0], e); trk[0].engine = trk[0].eng_req;
+     for (pi = 0; pi < NPAGES; pi++) {
+       const page_t *pg = &PAGES[pi];
+       if (e && pg->scope != SC_ENGINE && pg->graph != GR_BROWSE) continue;
+       ui.page = (uint8_t)pi;
+       for (c = 0; c < 4u; c++) {
+         int16_t *vp = 0, keep;
+         const param_desc_t *d = pg->scope == SC_STEP || pg->scope == SC_TRK ? 0 : page_desc(pg, c, &vp);
+         int32_t v, step;
+         if (!d || !vp) { ui.force = 1; draw_columns(); continue; }
+         keep = *vp; step = (d->max - d->min) / 300 + 1;
+         for (v = d->min; v <= d->max; v += step) { *vp = (int16_t)v; ui.force = 1; draw_columns(); }
+         *vp = keep;
+       }
+     }
+   }
+   ui.home = 1; ui.force = 1; draw_columns();
+   assert(!ncut);
+ }
+ printf("%-46s ok\n", "columns: no label / value / unit cut (Inter Tight)");
  return 0;}

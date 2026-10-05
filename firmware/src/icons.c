@@ -1,15 +1,18 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Parameter icons: a 12 x 12 px, 2-bit glyph left of each column label.
- * Art: assets/icons.png + icons.json -> build/gen/felucca_icons.h
- * (tools/gen_icons.py). Which icon a parameter gets is decided here, by its label.
+/* Parameter icons: a 12 x 12 px, 4-bit anti-aliased glyph left of each column label.
+ * Jangada (after Felucca 1.0): the Fukiai icon font (MIT, Hügelton Instruments; assets/fonts/fukiai.ttf),
+ * the names of assets/icons.json -> build/gen/ui_icons.h (tools/gen_aa_icons.py --legacy-only).
+ * Which icon a parameter gets is decided here, by its label.
  * FELUCCA_ICONS=0 turns them off (labels get their full width back). */
-#include "felucca_icons.h"
+#include "ui_icons.h"
+#define ICON_CELL 12
+#define FELUCCA_ICONS_N AI12_N
 #ifndef FELUCCA_ICONS
-#define FELUCCA_ICONS (FELUCCA_ICONS_N > 0)   /* on when the atlas has icons */
+#define FELUCCA_ICONS (FELUCCA_ICONS_N > 0)   /* on when the font has icons */
 #endif
 #if FELUCCA_ICONS && FELUCCA_ICONS_N == 0
-#error "FELUCCA_ICONS=1 but felucca_icons.h has no icons (assets/icons.png missing?)"
+#error "FELUCCA_ICONS=1 but ui_icons.h has no icons"
 #endif
 #define ICON_NONE 0xFFu                   /* no icon (empty column) */
 #define ICON_AUTO 0xFEu                   /* draw_column: look the label up */
@@ -130,23 +133,13 @@ static uint32_t engine_icon(const char *name)
     return ICON_GENERIC;
 }
 
-/* 2-bit icon, ink levels 1..3 = a third .. all of colour c (blended onto black, like cv_text) */
+/* the icon in colour c, blended into what lies under it (as cv_text) */
 static void cv_icon(int32_t x, int32_t y, uint32_t id, uint16_t c)
 {
-    uint16_t ramp[4];
-    uint32_t r = c >> 11, g = (c >> 5) & 63u, b = c & 31u, a, i, j;
-    const uint8_t *p;
-    if (id >= FELUCCA_ICONS_N)
+    if (id >= ICON_COUNT || AI12_IDX[id] == 0xFFu)
         return;
-    for (a = 0; a < 4u; a++)
-        ramp[a] = (uint16_t)(((r * a / 3u) << 11) | ((g * a / 3u) << 5) | (b * a / 3u));
-    p = ICON_DATA[id];
-    for (j = 0; j < ICON_CELL; j++)
-        for (i = 0; i < ICON_CELL; i++) {
-            uint32_t k = j * ICON_CELL + i, v = (p[k >> 2] >> (6u - 2u * (k & 3u))) & 3u;
-            if (v)
-                cv_pset(x + (int32_t)i, y + (int32_t)j, ramp[v]);
-        }
+    ap_begin(c);
+    cv_alpha(x, y, ICON_CELL, ICON_CELL, AI12_DATA + (uint32_t)AI12_IDX[id] * (ICON_CELL * ICON_CELL / 2u));
 }
 #else
 static uint32_t icon_for_label(const char *l) { (void)l; return ICON_NONE; }

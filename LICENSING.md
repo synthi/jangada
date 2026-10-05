@@ -2,7 +2,7 @@
 
 Felucca is free software. Its **code** is licensed under the GNU General Public License,
 version 3 only (`GPL-3.0-only`, full text in `LICENSE`). Its **assets** are not part of
-that licence: the icon atlas `assets/icons.png`, the panel image `docs/panel.jpg` and the drum sounds made by
+that licence: the panel image `docs/panel.jpg` and the drum sounds made by
 `tools/gen_waves.py` (the Hügelton Sample Pack) are Copyright (C) 2026 Hügelton Instruments,
 all rights reserved. Their licence terms will be published later.
 
@@ -41,8 +41,9 @@ assets, is entirely governed by the GPL.
 | What | Licence | Where |
 | --- | --- | --- |
 | Instrument samples (Versilian Studios VSCO-2 CE, VCSL) | CC0 1.0 | `assets/samples-cc0/`, provenance in `ATTRIBUTION.txt` there |
-| Terminus font 8x16 (ter-u16n) | SIL OFL 1.1 | `assets/fonts/ter-u16n.bdf`, `assets/fonts/Terminus-LICENSE.txt` |
-| Fukiai icon font (Hügelton Instruments), web editor only | MIT | `web/fukiai.ttf`, `web/FUKIAI-LICENSE.txt` |
+| Inter Tight (Copyright 2022 The Inter Project Authors, <https://github.com/rsms/inter>): the firmware's UI font, rasterised at build time by `tools/gen_aa_font.py` (after Felucca 1.0) | SIL OFL 1.1 | `assets/fonts/InterTight[wght].ttf`, `assets/fonts/OFL-InterTight.txt`, `LICENSES/OFL-InterTight.txt` |
+| Fukiai icon font (Hügelton Instruments): the firmware's parameter icons, rasterised at build time by `tools/gen_aa_icons.py` (after Felucca 1.0), and the web editor | MIT | `assets/fonts/fukiai.ttf` (the version of Felucca 1.0), `web/fukiai.ttf`, `LICENSES/MIT-Fukiai.txt`, `web/FUKIAI-LICENSE.txt` |
+| Terminus font 8x16 (ter-u16n): only the README banner (`tools/make_banner.py`); the firmware no longer uses it | SIL OFL 1.1 | `assets/fonts/ter-u16n.bdf`, `assets/fonts/Terminus-LICENSE.txt` |
 | CrispyZebra by Leo Kuroshita (<https://github.com/hugelton/CrispyZebra>): the PHASE engine's waveforms are a C port of its oscillator | GPL-3.0 | `firmware/src/eng_phase.c` |
 | klattsch by Tony Gies (<https://github.com/tgies/klattsch>): design reference for the VOICE (formant) engine; no code copied. Formant data from Klatt (1980) / Hillenbrand et al. (1995) | MIT (klattsch) | credit only |
 | SLOOP 2.2 by isod89 (<https://github.com/isod89/sloop-fm1>), a Felucca fork: the punch-in effects, the master bus (DUST, DUCK, DJ filter), the layers (hold a button), the one-key chords and the TRACKS view are ported or adapted from it | GPL-3.0 | `firmware/src/punch.c`, `firmware/src/fx.c`, `firmware/src/ui_layers.c`, `firmware/src/seq.c` |

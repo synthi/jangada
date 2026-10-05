@@ -92,8 +92,10 @@ def generate():
     """generated headers (fonts, icons, tables, samples)"""
     GEN.mkdir(parents=True, exist_ok=True)
     tools = SRC / "tools"
-    cmds = [[tools / "gen_font.py", GEN / "felucca_font.h"],
-            [tools / "gen_icons.py", GEN / "felucca_icons.h"],
+    cmds = [[tools / "gen_aa_font.py", GEN / "ui_fonts.h", "--preset", "jangada"],   # Jangada: Inter Tight (Felucca 1.0)
+            [tools / "gen_aa_icons.py", GEN / "ui_icons.h", "--font", SRC / "assets" / "fonts" / "fukiai.ttf",
+             "--sizes", "12", "--legacy-only"],                                       # Fukiai, 4-bit
+            [tools / "gen_ui_palettes.py", GEN / "ui_palettes.h"],                    # the palettes by role
             [tools / "gen_tables.py", GEN / "felucca_tables.h"],
             [tools / "gen_samples.py", GEN / "felucca_samples.h"],
             [tools / "gen_drumkits.py", GEN / "felucca_drumkits.h"],
