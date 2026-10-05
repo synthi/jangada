@@ -5,13 +5,17 @@
  * nothing touched) the button opens its pages as before.
  *   FX    the 16 punch-in effects (punch.c, run by seq.c keyboard_block)   knobs: FILTER DUST DUCK
  *   GLO   keys 1..4 mute, 5..8 solo, the last white key: tap tempo         knobs: the levels of tracks 1..4
+ *   SEQ   the 16 steps of the page (Elektron style): an empty step is set at once with the note played
+ *         last, a set one is cleared when its key is let go, unless a knob edited it meanwhile; the
+ *         first four black keys pick the page (steps 1-16 .. 49-64)
+ *         knobs, no step held: NOTE (the pen)  DIV  SWING  LEN;  steps held: NOTE  RTCH  CHNC  FLAG
  * HOME tapped while a layer button is held locks the layer open (both hands free); any other button
  * lets it go and does only that, PLAY, REC and OCT- / OCT+ keep working inside it.
  * Colours: the palette's (CHOQUE by default), white for what is on. */
 #define TAP_MS 450u                                     /* a press shorter than this, untouched: a tap */
 #define SHOW_MS 140u                                    /* the layer shows after this (a tap does not flash it) */
-static const uint8_t LAYER_BTN[LY_COUNT] = {NB, B_FX, B_GLO};
-static const char *const LAYER_NAME[LY_COUNT] = {"", "PUNCH", "MIX"};
+static const uint8_t LAYER_BTN[LY_COUNT] = {NB, B_FX, B_GLO, B_SEQ};
+static const char *const LAYER_NAME[LY_COUNT] = {"", "PUNCH", "MIX", "STEPS"};
 
 static struct {
     uint8_t btn;                 /* the layer whose button is held (0 none) */
@@ -22,6 +26,10 @@ static struct {
     uint8_t tap_n;               /* tap tempo */
     uint32_t tap_ms[4];
     uint32_t head, tiles, foot;  /* drawn-state signatures */
+    uint8_t klay[27];            /* the layer each key went down in (its key-up goes there) */
+    uint8_t page;                /* SEQ: steps page * 16 .. */
+    uint16_t held;               /* SEQ: step keys down (white key bits) */
+    uint16_t pend_off;           /* SEQ: steps that clear when their key is let go */
 } ly;
 
 static uint32_t layer_now(void) { return ly.lock ? ly.lock : ly.btn; }
@@ -55,11 +63,89 @@ static void tap_tempo(uint32_t now)
     }
 }
 
-/* a key-down of the layer (seq.c lk_q): k the key index, now its time */
-static void layer_key(uint32_t layer, uint32_t k, uint32_t now)
+/* --------------------------------------------------------------- SEQ --- */
+static uint32_t trk_len(const track_t *t) { return t->p[P_SLEN] > 0 ? (uint32_t)t->p[P_SLEN] : 1u; }
+
+static void step_down(uint32_t w)
+{
+    track_t *t = TSEL;
+    uint32_t idx = ly.page * 16u + w;
+    step_t *st = &t->step[idx];
+    if (idx >= trk_len(t))
+        return;
+    if (step_on(st)) {                                  /* set: cleared when let go (unless edited) */
+        ly.pend_off |= (uint16_t)(1u << w);
+        return;
+    }
+    fm1_irq_off();
+    st->note[0] = last_note;
+    st->n = 1;
+    st->time = ST_NOTE;
+    st->flags = 0;
+    st->vel = 100;
+    fm1_irq_on();
+}
+
+static void step_up(uint32_t w)
+{
+    track_t *t = TSEL;
+    uint32_t idx = ly.page * 16u + w;
+    if (!((ly.pend_off >> w) & 1u))
+        return;
+    ly.pend_off &= (uint16_t)~(1u << w);
+    if (idx < trk_len(t)) {
+        fm1_irq_off();
+        step_clear(&t->step[idx]);
+        fm1_irq_on();
+    }
+}
+
+/* a knob with step keys held: k 0 NOTE, 1 RTCH, 2 CHNC, 3 FLAG (- ACC SLD A+S), on every held step */
+static void steps_held_edit(uint32_t k, int32_t s)
+{
+    track_t *t = TSEL;
+    uint32_t w, i;
+    ly.pend_off &= (uint16_t)~ly.held;                  /* edited: kept when let go */
+    fm1_irq_off();
+    for (w = 0; w < 16u; w++) {
+        uint32_t idx = ly.page * 16u + w;
+        step_t *st = &t->step[idx];
+        if (!((ly.held >> w) & 1u) || idx >= trk_len(t) || !step_on(st))
+            continue;
+        if (k == 0u) {
+            for (i = 0; i < st->n; i++)
+                st->note[i] = (uint8_t)clamp(st->note[i] + s, 1, 127);
+            last_note = st->note[0];
+        } else {
+            uint32_t sh = k == 1u ? SF_RATCH_SH : k == 2u ? SF_CHANCE_SH : 0u, m = 3u << sh;
+            int32_t v = (int32_t)((st->flags & m) >> sh) + (s > 0 ? 1 : -1);
+            st->flags = (uint8_t)((st->flags & ~m) | ((uint32_t)clamp(v, 0, 3) << sh));
+        }
+    }
+    fm1_irq_on();
+}
+
+/* a key of the layer (seq.c lk_q): k the key index, down / up, now its time */
+static void layer_key(uint32_t layer, uint32_t k, uint32_t down, uint32_t now)
 {
     int32_t w = punch_key(k);                           /* white key 0..15, -1 black */
-    if (layer != LY_MIX || w < 0)
+    if (layer == LY_STEP) {
+        if (w < 0) {                                    /* the first four black keys: pages 1..4 */
+            static const int8_t PG[12] = {-1, 0, -1, 1, -1, 2, -1, -1, 3, -1, -1, -1};
+            if (down && k < 12u && PG[k] >= 0 && (uint32_t)PG[k] * 16u < trk_len(TSEL))
+                ly.page = (uint8_t)PG[k];
+            return;
+        }
+        if (down) {
+            ly.held |= (uint16_t)(1u << w);
+            step_down((uint32_t)w);
+        } else {
+            ly.held &= (uint16_t)~(1u << w);
+            step_up((uint32_t)w);
+        }
+        return;
+    }
+    if (layer != LY_MIX || w < 0 || !down)
         return;
     if (w < 4) {
         trk[w].p[P_MUTE] = (int16_t)!trk[w].p[P_MUTE];
@@ -133,9 +219,11 @@ static void layers_input(uint32_t *pressed, uint32_t now)
     }
     kb_layer = (uint8_t)layer_now();
     while (lk_r != lk_w) {                              /* the layer keys from the ISR */
-        uint32_t k = lk_q[lk_r % LKQ], t = lk_t[lk_r % LKQ];
+        uint32_t v = lk_q[lk_r % LKQ], t = lk_t[lk_r % LKQ], k = (v & 0x7Fu) % 27u, up = (v & LK_UP) != 0u;
         lk_r++;
-        layer_key(kb_layer, k, t);
+        if (!up)
+            ly.klay[k] = (uint8_t)(v >> 8);
+        layer_key(ly.klay[k], k, !up, t);
     }
 }
 
@@ -160,6 +248,22 @@ static void layers_knobs(uint32_t layer)
         } else if (layer == LY_MIX) {
             int16_t *lv = trk_level_p(k);
             *lv = (int16_t)clamp(*lv + accel(EN_K1 + k, s, 127), 0, 127);
+        } else if (layer == LY_STEP) {
+            track_t *t = TSEL;
+            if (ly.held) {
+                steps_held_edit(k, s);
+            } else if (k == 0u) {
+                last_note = (uint8_t)clamp(last_note + s, 1, 127);   /* the pen: the note a new step gets */
+            } else if (k == 1u) {
+                t->p[P_SDIV] = (int16_t)clamp(t->p[P_SDIV] + s, TP[P_SDIV].min, TP[P_SDIV].max);
+            } else if (k == 2u) {
+                const param_desc_t *d = track_desc(t, P_SSWING);
+                t->p[P_SSWING] = (int16_t)clamp(t->p[P_SSWING] + accel(EN_K3, s, d->max - d->min), d->min, d->max);
+            } else {
+                t->p[P_SLEN] = (int16_t)clamp(t->p[P_SLEN] + accel(EN_K4, s, 63), 1, NSTEP);
+                if ((uint32_t)ly.page * 16u >= trk_len(t))
+                    ly.page = (uint8_t)((trk_len(t) - 1u) / 16u);
+            }
         }
     }
 }
@@ -175,6 +279,12 @@ static uint32_t layers_key_leds(void)
             on = punch.req == (int8_t)w || (punch.req < 0 && (w & 3u) == 0u);
         else if (layer == LY_MIX)
             on = w < 4u ? !trk[w].p[P_MUTE] : w < 8u ? (int)((song.solo >> (w - 4u)) & 1u) : w == 15u;
+        else if (layer == LY_STEP) {                    /* the set steps; the playhead blinks off */
+            uint32_t idx = ly.page * 16u + w;
+            on = idx < trk_len(TSEL) && step_on(&TSEL->step[idx]);
+            if (song.playing && idx == TSEL->seq_idx)
+                on = !on;
+        }
         if (on)
             m |= 1u << key_of_white(w);
     }
@@ -193,6 +303,7 @@ static void layers_leds(uint8_t *nl)                   /* ui_leds: the keys, and
 typedef struct {
     char lab[8];
     uint16_t bg, fg, top;        /* fill, text, the 3-pixel top band (0 = none) */
+    uint8_t marks;               /* small squares under the label (a ratchet), 0 = none */
 } tile_t;
 
 static uint32_t ly_hash(uint32_t h, const char *p) { while (*p) h = h * 31u + (uint8_t)*p++; return h; }
@@ -201,7 +312,7 @@ static void tiles_draw(const tile_t *tl)
 {
     uint32_t r, c, sig = 7u;
     for (r = 0; r < 16u; r++)
-        sig = ly_hash(sig * 31u + tl[r].bg * 3u + tl[r].fg * 5u + tl[r].top * 7u, tl[r].lab);
+        sig = ly_hash(sig * 31u + tl[r].bg * 3u + tl[r].fg * 5u + tl[r].top * 7u + tl[r].marks, tl[r].lab);
     if (!ui.force && sig == ly.tiles)
         return;
     ly.tiles = sig;
@@ -210,10 +321,13 @@ static void tiles_draw(const tile_t *tl)
         for (c = 0; c < 4u; c++) {
             const tile_t *t = &tl[r * 4u + c];
             int32_t x = 2 + (int32_t)c * 60;
+            uint32_t m;
             cv_rect(x, 2, 56, 32, t->bg);
             if (t->top)
                 cv_rect(x, 2, 56, 3, t->top);
-            cv_text(x + 28 - text_w(&FONT_S, t->lab) / 2, 10, &FONT_S, t->lab, t->fg);
+            cv_text(x + 28 - text_w(&FONT_S, t->lab) / 2, 8, &FONT_S, t->lab, t->fg);
+            for (m = 0; m < t->marks; m++)
+                cv_rect(x + 22 + (int32_t)m * 5, 27, 3, 3, t->fg);
         }
         cv_blit(0, 40 + r * 36);
     }
@@ -346,6 +460,77 @@ static void layer_screen_draw(void)
             lab[i] = L[i];
             fmt_int(v[i], lv * 100 / 127);
             ratio[i] = lv * 1000 / 127;
+        }
+    }
+    else if (layer == LY_STEP) {                        /* the 16 steps of the page */
+        static char pg[16];
+        track_t *t = TSEL;
+        uint32_t len = trk_len(t);
+        for (i = 0; i < 16u; i++) {
+            uint32_t idx = ly.page * 16u + i;
+            const step_t *st = &t->step[idx];
+            int on = step_on(st);
+            if (idx >= len) {
+                tl[i].bg = C_BLACK;
+                continue;
+            }
+            if (on)
+                note_name(tl[i].lab, st->note[0]);
+            else if (st->time == ST_TIE && st->n)
+                str_cpy(tl[i].lab, "--", 8);
+            else
+                fmt_int(tl[i].lab, (int32_t)idx + 1);
+            tl[i].bg = on ? ((st->flags & SF_ACCENT) ? C_HI : C_AMB) : C_LINE;
+            tl[i].fg = on ? C_BLACK : C_DIM;
+            tl[i].marks = (uint8_t)(on ? (st->flags & SF_RATCH) >> SF_RATCH_SH : 0u);
+            if (on && (st->flags & SF_CHANCE))
+                tl[i].top = C_DIM;                      /* not every time */
+            if (song.playing && idx == t->seq_idx)
+                tl[i].top = C_WHITE;                    /* the playhead */
+            if ((ly.held >> i) & 1u) {
+                tl[i].bg = C_WHITE;
+                tl[i].fg = C_BLACK;
+            }
+        }
+        str_cpy(pg, "TRACK 1", sizeof pg);
+        pg[6] = (char)('1' + song.sel);
+        if (len > 16u) {
+            str_cpy(pg + 7, "  1/1", 6);
+            pg[9] = (char)('1' + ly.page);
+            pg[11] = (char)('0' + (len + 15u) / 16u);
+        }
+        sub = pg;
+        if (ly.held) {
+            const step_t *st = 0;
+            for (i = 0; i < 16u; i++)
+                if (((ly.held >> i) & 1u) && step_on(&t->step[ly.page * 16u + i])) {
+                    st = &t->step[ly.page * 16u + i];
+                    break;
+                }
+            lab[0] = "NOTE", lab[1] = "RTCH", lab[2] = "CHNC", lab[3] = "FLAG";
+            if (st) {
+                static const char *const FL[4] = {"-", "ACC", "SLD", "A+S"};
+                uint32_t r = (st->flags & SF_RATCH) >> SF_RATCH_SH, c = (st->flags & SF_CHANCE) >> SF_CHANCE_SH;
+                note_name(v[0], st->note[0]);
+                str_cpy(v[1], "X1", 10);
+                v[1][1] = (char)('1' + r);
+                fmt_int(v[2], 100 - 25 * (int32_t)c);
+                str_cpy(v[3], FL[st->flags & 3u], 10);
+                ratio[0] = st->note[0] * 1000 / 127;
+                ratio[1] = (int32_t)r * 333;
+                ratio[2] = 1000 - (int32_t)c * 333;
+            }
+        } else {
+            const char *u;
+            lab[0] = "NOTE", lab[1] = "DIV", lab[2] = "SWG", lab[3] = "LEN";
+            note_name(v[0], last_note);
+            param_format(track_desc(t, P_SDIV), t->p[P_SDIV], v[1], &u);
+            param_format(track_desc(t, P_SSWING), t->p[P_SSWING], v[2], &u);
+            fmt_int(v[3], (int32_t)len);
+            ratio[0] = last_note * 1000 / 127;
+            ratio[1] = (t->p[P_SDIV] - TP[P_SDIV].min) * 1000 / (TP[P_SDIV].max - TP[P_SDIV].min);
+            ratio[2] = t->p[P_SSWING] * 10;
+            ratio[3] = ((int32_t)len - 1) * 1000 / 63;
         }
     }
     layer_title(LAYER_NAME[layer % LY_COUNT], sub);

@@ -350,12 +350,23 @@ static void input_off(track_t *t, uint32_t note)
 
 /* Jangada: the layer the keys belong to (ui_layers.c sets it: a layer button held or locked open).
  * LY_FX runs here (punch.c); the other layers' key-downs go to the UI through lk_q */
-enum { LY_NONE, LY_FX, LY_MIX, LY_COUNT };
+enum { LY_NONE, LY_FX, LY_MIX, LY_STEP, LY_COUNT };
 static volatile uint8_t kb_layer;
-#define LKQ 16u
-static volatile uint8_t lk_q[LKQ], lk_w;
+#define LKQ 32u
+#define LK_UP 0x80u                                   /* lk_q: key index | LK_UP (a key-up) | layer << 8 */
+static volatile uint16_t lk_q[LKQ];
+static volatile uint8_t lk_w;
 static volatile uint32_t lk_t[LKQ];
 static uint8_t lk_r;
+static uint32_t kb_lkeys;                             /* keys down that belong to a UI layer (their key-up goes too) */
+static void lk_put(uint32_t v)
+{
+    if ((uint8_t)(lk_w - lk_r) < LKQ) {
+        lk_t[lk_w % LKQ] = fm1_ms;
+        lk_q[lk_w % LKQ] = (uint16_t)v;
+        lk_w++;
+    }
+}
 
 static void keyboard_block(void)
 {
@@ -376,10 +387,9 @@ static void keyboard_block(void)
                         punch.req = (int8_t)fx;
                         punch.keybit = 1u << k;
                     }
-                } else if ((uint8_t)(lk_w - lk_r) < LKQ) {   /* the others: to the UI, with the time */
-                    lk_t[lk_w % LKQ] = fm1_ms;
-                    lk_q[lk_w % LKQ] = (uint8_t)k;
-                    lk_w++;
+                } else {                          /* the others: to the UI, with the time */
+                    kb_lkeys |= 1u << k;
+                    lk_put(k | (uint32_t)kb_layer << 8);
                 }
                 continue;
             }
@@ -394,6 +404,10 @@ static void keyboard_block(void)
             if (punch.keybit == 1u << k) {        /* the punch-in key is up: the mix comes back */
                 punch.keybit = 0;
                 punch.req = -1;
+            }
+            if (kb_lkeys & 1u << k) {             /* a UI layer's key is up (its layer may be gone) */
+                kb_lkeys &= ~(1u << k);
+                lk_put(k | LK_UP);
             }
             if (kb_note[k] == KB_SILENT)
                 continue;
