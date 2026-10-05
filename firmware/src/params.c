@@ -21,6 +21,7 @@ static const char *const N_PRIO[] = {"LAST", "LOW", "HIGH"};
 static const char *const N_ALLOC[] = {"ROT", "REUSE"};
 static const char *const N_ORDER[] = {"NOTE", "PLAY"};
 static const char *const N_CLOCK[] = {"INT"};
+static const char *const N_CHORD[] = {"OFF", "TRIAD", "7TH", "9TH", "SUS4", "POWER"};   /* seq.c CHORD_DEG (Jangada) */
 static const char *const N_NOTE[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 static const char *const N_DASH[] = {"--"};
 static const char *const N_GO[] = {"--", "GO"};
@@ -90,6 +91,7 @@ static const param_desc_t TP[P_COUNT] = {
     [P_M2SRC] = PE("SRC", N_MSRC, 0), [P_M2DST] = PE("DST", N_MDST, 0), [P_M2AMT] = PD("AMT", F_BIPCT, -64, 63, 0),
     [P_M3SRC] = PE("SRC", N_MSRC, 0), [P_M3DST] = PE("DST", N_MDST, 0), [P_M3AMT] = PD("AMT", F_BIPCT, -64, 63, 0),
     [P_M4SRC] = PE("SRC", N_MSRC, 0), [P_M4DST] = PE("DST", N_MDST, 0), [P_M4AMT] = PD("AMT", F_BIPCT, -64, 63, 0),
+    [P_CHORD] = PE("CHRD", N_CHORD, 0),
 };
 
 static const param_desc_t GP[G_COUNT] = {
@@ -272,6 +274,7 @@ static const page_t PAGES[] = {
     {"DLY", FAM_FX, SC_GLOBAL, GR_NONE, {G_DTIME, G_DFDBK, G_DCOLOR, G_DMIX}},
     {"REV/CHO", FAM_FX, SC_GLOBAL, GR_NONE, {G_RSIZE, G_RDAMP, G_CRATE, G_CDEPTH}},
     {"SCL", FAM_SCL, SC_TRACK, GR_SCALE, {P_ROOT, P_SCALE, P_QUANT, P_TRANS}},
+    {"CHORD", FAM_SCL, SC_TRACK, GR_NONE, {P_CHORD, 0xFF, 0xFF, 0xFF}},   /* Jangada: one key, a chord */
     {"EDIT 1", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E0, P_E1, P_E2, P_E3}},
     {"EDIT 2", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E4, P_E5, P_E6, P_E7}},
     {"EDIT 3", FAM_EDIT, SC_ENGINE, GR_NONE, {P_E8, P_E9, P_E10, P_E11}},     /* Jangada: shown when the */

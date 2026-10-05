@@ -1040,11 +1040,11 @@ function makeMockDevice(opt = {}) {
     D("DEPTH", F.PCT, 0, 127, 127), D("SRC", F.ENUM, 0, 5, 0, ["OFF", "LFO", "ENV", "VEL", "KEY", "RND"]), D("DST", F.ENUM, 0, 18, 0, ["CUT", "PIT", "SHP", "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14", "E15", "E16"]), D("AMT", F.BIPCT, -64, 63, 0),
     D("SRC", F.ENUM, 0, 5, 0, ["OFF", "LFO", "ENV", "VEL", "KEY", "RND"]), D("DST", F.ENUM, 0, 18, 0, ["CUT", "PIT", "SHP", "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14", "E15", "E16"]), D("AMT", F.BIPCT, -64, 63, 0), D("SRC", F.ENUM, 0, 5, 0, ["OFF", "LFO", "ENV", "VEL", "KEY", "RND"]),
     D("DST", F.ENUM, 0, 18, 0, ["CUT", "PIT", "SHP", "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14", "E15", "E16"]), D("AMT", F.BIPCT, -64, 63, 0), D("SRC", F.ENUM, 0, 5, 0, ["OFF", "LFO", "ENV", "VEL", "KEY", "RND"]), D("DST", F.ENUM, 0, 18, 0, ["CUT", "PIT", "SHP", "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14", "E15", "E16"]),
-    D("AMT", F.BIPCT, -64, 63, 0), NONE, NONE, NONE,
+    D("AMT", F.BIPCT, -64, 63, 0), D("CHRD", F.ENUM, 0, 5, 0, ["OFF", "TRIAD", "7TH", "9TH", "SUS4", "POWER"]), NONE, NONE,
     NONE, NONE, NONE, NONE,
     NONE, NONE, NONE, NONE,
     NONE, NONE, NONE, NONE,
-    NONE,
+    NONE, NONE,
   ];
   const GP = [
     D("BPM", F.BPM, 40, 240, 120), D("SWG", F.PCT, 0, 100, 0), D("CLK", F.ENUM, 0, 0, 0, ["INT"]), D("TUNE", F.INT, -50, 50, 0),
@@ -1187,7 +1187,7 @@ function makeMockDevice(opt = {}) {
         P("GHOST KEYS", [0, 40, 110, 90, 0, 50, 20, 80, 0, 0, 0, 0, 0, 0, 0, 0], [90, 90, 120, 110], 0, 0),
         P("DRONE DUST", [2, 50, 100, 120, -12, 90, 70, 70, 0, 0, 0, 0, 0, 0, 0, 0], [110, 90, 127, 118], 0, 0)] },
   ];
-  const P_COUNT = 77, G_COUNT = 31, NSTEP = 64, P_E0 = 61, NEDIT = 16, G_ENGSEL = 20, P_SLCR = 45;
+  const P_COUNT = 78, G_COUNT = 31, NSTEP = 64, P_E0 = 62, NEDIT = 16, G_ENGSEL = 20, P_SLCR = 45;
   /* </generated> */
   /* factory PATTERNS[] (ui.c): absolute notes, 0 rest; flags 1 accent, 2 slide, 4 tie (holds the previous note) */
   const T_ = 4;
@@ -1869,7 +1869,7 @@ function selfLoad() {
 const stepEdit = new Map(); /* index -> time of the last edit */
 
 /* parameter ids (firmware/src/core.h); used only when P_COUNT / G_COUNT match */
-const EXPECT = { pcount: 77, gcount: 31, pe0: 61 };   /* tools/gen_editor_tables.py --check: == the firmware */
+const EXPECT = { pcount: 78, gcount: 31, pe0: 62 };   /* tools/gen_editor_tables.py --check: == the firmware */
 const P = { LEVEL: 0, SLEN: 29 };
 const LAYOUT = (pe0) => [
   { t: "ENV", pages: [["ENV", 0, [1, 2, 3, 4]], ["ENV DEST", 0, [5, 6, 7, 8]]] },
@@ -1879,7 +1879,7 @@ const LAYOUT = (pe0) => [
     ["EDIT 3", 0, [pe0 + 8, pe0 + 9, pe0 + 10, pe0 + 11]], ["EDIT 4", 0, [pe0 + 12, pe0 + 13, pe0 + 14, pe0 + 15]]] },
   { t: "VOICE", pages: [["LEVEL", 0, [0]], ["VOICE", 0, [37, 38, 41, 42]], ["VOICE 2", 0, [43, 44, 39, 40]]] },
   { t: "FX", pages: [["FX", 0, [33, 34, 35, 36]], ["SLICER", 0, [45, 46, 47, 48]], ["DLY", 1, [4, 5, 6, 7]], ["REV/CHO", 1, [8, 9, 10, 11]]] },
-  { t: "SCL", pages: [["SCL", 0, [25, 26, 27, 28]]] },
+  { t: "SCL", pages: [["SCL", 0, [25, 26, 27, 28]], ["CHORD", 0, [61]]] },   /* Jangada: CHORD */
   { t: "ARP", pages: [["ARP", 0, [17, 18, 19, 20]], ["ARP 2", 0, [21, 22, 23, 24]]] },
   { t: "SEQ PATTERN", tab: "seqgroups", pages: [["PATTERN", 0, [29, 30, 31, 32]]] },
   { t: "GLOBAL", tab: "setgroups", pages: [["GLOBAL", 1, [0, 1, 2, 3]]] },

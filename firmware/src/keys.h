@@ -28,6 +28,8 @@ static const uint8_t P_KEY[P_COUNT] = {
     [P_E8] = 57, [P_E9] = 58, [P_E10] = 59, [P_E11] = 60, [P_E12] = 61, [P_E13] = 62, [P_E14] = 63, [P_E15] = 64,
     [P_M1SRC] = 65, [P_M1DST] = 66, [P_M1AMT] = 67, [P_M2SRC] = 68, [P_M2DST] = 69, [P_M2AMT] = 70,
     [P_M3SRC] = 71, [P_M3DST] = 72, [P_M3AMT] = 73, [P_M4SRC] = 74, [P_M4DST] = 75, [P_M4AMT] = 76,
+    /* Jangada 0.2 */
+    [P_CHORD] = 77,
 };
 
 /* the P_* index of a key, P_COUNT when this firmware does not know it */

@@ -9,6 +9,7 @@
  * other channel the selected track. A note into an armed track (song.rec) while
  * the transport runs is recorded into its pattern, quantised to its (swung) steps, with its
  * held length as TIE steps (rec_note, rec_hold, rec_release). */
+#define SCALE_MINOR SCALE_MASK[2]          /* (CHORD on CHR: the chords of the minor scale) */
 static const uint16_t SCALE_MASK[] = {
     0xFFF,                                   /* CHR */
     (1 << 0) | (1 << 2) | (1 << 4) | (1 << 5) | (1 << 7) | (1 << 9) | (1 << 11),   /* MAJ */
@@ -31,6 +32,7 @@ static const uint16_t SCALE_MASK[] = {
 #define KB_SILENT 255u
 static uint32_t kb_prev;
 static uint8_t kb_note[27], kb_trk[27];  /* per key: the note it started and on which track */
+static uint8_t kb_nt[27][4], kb_n[27];    /* Jangada: per key, the chord it started (CHORD on), 0 = none */
 static uint8_t last_note = 60;
 static volatile uint8_t transport_req;   /* 1 start, 2 stop (from the UI) */
 static volatile uint8_t panic_req;       /* bit per track: release every sounding note (preset / engine change) */
@@ -72,15 +74,15 @@ static uint32_t kb_map(const track_t *t, uint32_t k)
     if (ENGINES[t->eng_req % NENGINES] == &ENG_SLICE)   /* SLICE: lowest key = slice 0 (C4 + ROOT), no scale */
         return (uint32_t)clamp(SLC_BASE + t->p[P_ROOT] + 12 * song.octave + (int32_t)k, 0, 127);
 #endif
-    if (t->p[P_QUANT] == 1) {                    /* SNAP: every key, rounded down to the scale (the old ON) */
+    if (t->p[P_QUANT] == 1 && !t->p[P_CHORD]) {  /* SNAP: every key, rounded down to the scale (the old ON) */
         uint32_t mask = scale_mask(t), guard = 12;
         n += 12 * song.octave + t->p[P_TRANS];
         while (guard-- && !((mask >> (uint32_t)((n - t->p[P_ROOT] + 120) % 12)) & 1u))
             n--;
         return (uint32_t)clamp(n, 0, 127);
     }
-    if (t->p[P_QUANT] == 2) {                    /* WHITE: white keys walk the scale, black keys are silent */
-        uint32_t mask = scale_mask(t), i;
+    if (t->p[P_QUANT] == 2 || t->p[P_CHORD]) {   /* WHITE: white keys walk the scale, black keys are silent */
+        uint32_t mask = t->p[P_CHORD] && !t->p[P_SCALE] ? SCALE_MINOR : scale_mask(t), i;   /* (CHORD: as WHITE) */
         int32_t count = 0, degree = DEGREE[n % 12], oct;
         if (degree < 0)
             return KB_SILENT;
@@ -104,6 +106,40 @@ static uint32_t kb_map(const track_t *t, uint32_t k)
         n = 60 + t->p[P_ROOT] + 12 * oct + (int32_t)i;
     }
     return (uint32_t)clamp(n + 12 * song.octave + t->p[P_TRANS], 0, 127);
+}
+
+/* Jangada (after SLOOP): CHORD mode, the chord of the scale built on note n (in the scale; CHR: the
+ * minor scale), into c[]; the notes it holds (<= 4, the most a step keeps) */
+static const int8_t CHORD_DEG[6][4] = {
+    {0, -1, -1, -1},                     /* OFF */
+    {0, 2, 4, -1},                       /* TRIAD: 1 3 5 */
+    {0, 2, 4, 6},                        /* 7TH: 1 3 5 7 */
+    {0, 2, 6, 8},                        /* 9TH: 1 3 7 9 (the lo-fi / R&B voicing) */
+    {0, 3, 4, -1},                       /* SUS4: 1 4 5 */
+    {0, -1, -1, -1},                     /* POWER: 1 5 8 (semitones, below) */
+};
+static uint32_t chord_notes(const track_t *t, uint32_t n, uint8_t *c)
+{
+    uint32_t type = (uint32_t)clamp(t->p[P_CHORD], 0, 5), mask = t->p[P_SCALE] ? scale_mask(t) : SCALE_MINOR;
+    uint32_t k = 0, j;
+    if (type == 5u) {
+        static const uint8_t PW[3] = {0, 7, 12};
+        for (j = 0; j < 3u; j++)
+            if (n + PW[j] < 128u)
+                c[k++] = (uint8_t)(n + PW[j]);
+        return k;
+    }
+    for (j = 0; j < 4u && CHORD_DEG[type][j] >= 0; j++) {
+        int32_t m = (int32_t)n, d = CHORD_DEG[type][j], guard = 48;
+        while (d > 0 && guard--) {                       /* d scale degrees up */
+            m++;
+            if ((mask >> (uint32_t)((m - t->p[P_ROOT] + 120) % 12)) & 1u)
+                d--;
+        }
+        if (m < 128)
+            c[k++] = (uint8_t)m;
+    }
+    return k;
 }
 
 /* ------------------------------------------------------------- arp --- */
@@ -350,7 +386,7 @@ static void input_off(track_t *t, uint32_t note)
 
 /* Jangada: the layer the keys belong to (ui_layers.c sets it: a layer button held or locked open).
  * LY_FX runs here (punch.c); the other layers' key-downs go to the UI through lk_q */
-enum { LY_NONE, LY_FX, LY_MIX, LY_STEP, LY_COUNT };
+enum { LY_NONE, LY_FX, LY_MIX, LY_STEP, LY_SCALE, LY_COUNT };
 static volatile uint8_t kb_layer;
 #define LKQ 32u
 #define LK_UP 0x80u                                   /* lk_q: key index | LK_UP (a key-up) | layer << 8 */
@@ -395,10 +431,20 @@ static void keyboard_block(void)
             }
             kb_trk[k] = song.sel;
             kb_note[k] = (uint8_t)kb_map(&trk[kb_trk[k]], k);
+            kb_n[k] = 0;
             if (kb_note[k] == KB_SILENT)
                 continue;
-            input_on(&trk[kb_trk[k]], kb_note[k], 100);
             mc = trk_midi_ch(kb_trk[k]);
+            if (trk[kb_trk[k]].p[P_CHORD] && !is_drum(&trk[kb_trk[k]])) {   /* Jangada: CHORD, the whole chord */
+                uint32_t i;
+                kb_n[k] = (uint8_t)chord_notes(&trk[kb_trk[k]], kb_note[k], kb_nt[k]);
+                for (i = 0; i < kb_n[k]; i++) {
+                    input_on(&trk[kb_trk[k]], kb_nt[k][i], 100);
+                    midi_out_event(0x09u | (0x90u | mc) << 8 | (uint32_t)kb_nt[k][i] << 16 | 100u << 24);
+                }
+                continue;
+            }
+            input_on(&trk[kb_trk[k]], kb_note[k], 100);
             midi_out_event(0x09u | (0x90u | mc) << 8 | (uint32_t)kb_note[k] << 16 | 100u << 24);
         } else {
             if (punch.keybit == 1u << k) {        /* the punch-in key is up: the mix comes back */
@@ -411,6 +457,16 @@ static void keyboard_block(void)
             }
             if (kb_note[k] == KB_SILENT)
                 continue;
+            if (kb_n[k]) {                        /* a chord: all of its notes */
+                uint32_t i;
+                mc = trk_midi_ch(kb_trk[k] % NTRK);
+                for (i = 0; i < kb_n[k]; i++) {
+                    input_off(&trk[kb_trk[k] % NTRK], kb_nt[k][i]);
+                    midi_out_event(0x08u | (0x80u | mc) << 8 | (uint32_t)kb_nt[k][i] << 16);
+                }
+                kb_n[k] = 0;
+                continue;
+            }
             input_off(&trk[kb_trk[k] % NTRK], kb_note[k]);
             mc = trk_midi_ch(kb_trk[k] % NTRK);
             midi_out_event(0x08u | (0x80u | mc) << 8 | (uint32_t)kb_note[k] << 16);

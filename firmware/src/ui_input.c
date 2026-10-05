@@ -209,6 +209,8 @@ static void edit_param(uint32_t slot, int32_t steps)
     *vp = (int16_t)v;
     if (pg->scope == SC_TRACK && (id == P_VOICE || id == P_ALLOC))
         panic_req |= (uint8_t)(1u << song.sel);           /* Jangada: as a preset change: a POLY note on v[0] hung */
+    if (pg->scope == SC_TRACK && id == P_CHORD)
+        chord_poly(TSEL);
     if (!v)
         return;
     if (pg->scope == SC_GLOBAL && (id == G_LOAD || id == G_SAVE || id == G_CLRSEQ || id == G_INITSND) &&

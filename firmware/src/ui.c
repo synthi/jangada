@@ -255,6 +255,17 @@ static int param_kept(uint32_t i)
 }
 
 /* preset pi of the engine the track asked for: the whole sound (not the pattern parameters) */
+/* Jangada: CHORD needs POLY (MONO / LEGATO / UNISON sound one note of the chord): on with another voice
+ * mode, the track goes POLY; its sounding notes are let go, as a VOICE change does */
+static void chord_poly(track_t *t)
+{
+    if (!t->p[P_CHORD] || t->p[P_VOICE] == V_POLY || is_drum(t))
+        return;
+    t->p[P_VOICE] = V_POLY;
+    panic_req |= (uint8_t)(1u << (uint32_t)(t - trk));
+    ui_message("VOICE POLY");
+}
+
 static void apply_preset_to(track_t *t, uint32_t pi)
 {
     const engine_t *e = ENGINES[t->eng_req % NENGINES];
@@ -280,7 +291,8 @@ static void apply_preset_to(track_t *t, uint32_t pi)
     t->p[P_SUS] = e->presets[pi].env[2];
     t->p[P_REL] = e->presets[pi].env[3];
     t->p[P_ED_FLT] = e->presets[pi].fenv;
-    t->p[P_VOICE] = e->presets[pi].mono ? V_LEGATO : V_POLY;   /* mono presets keep the legato feel */
+    t->p[P_VOICE] = e->presets[pi].mono && !t->p[P_CHORD] ? V_LEGATO : V_POLY;   /* mono presets keep the legato
+                                                                                 * feel (CHORD: POLY, Jangada) */
     {   /* the rest of the patch: sends, arpeggiator, a pattern for an empty sequencer */
         static const uint8_t FX_DEF[4] = {0, 24, 28, 36};
         const preset_t *pr = &e->presets[pi];

@@ -9,13 +9,15 @@
  *         last, a set one is cleared when its key is let go, unless a knob edited it meanwhile; the
  *         first four black keys pick the page (steps 1-16 .. 49-64)
  *         knobs, no step held: NOTE (the pen)  DIV  SWING  LEN;  steps held: NOTE  RTCH  CHNC  FLAG
+ *   SCL   any key: the key of the song (ROOT of every synth track)
+ *         knobs: CHORD (the track: one key plays a chord of the scale)  SCALE (every synth track)  QNT  TRN
  * HOME tapped while a layer button is held locks the layer open (both hands free); any other button
  * lets it go and does only that, PLAY, REC and OCT- / OCT+ keep working inside it.
  * Colours: the palette's (CHOQUE by default), white for what is on. */
 #define TAP_MS 450u                                     /* a press shorter than this, untouched: a tap */
 #define SHOW_MS 140u                                    /* the layer shows after this (a tap does not flash it) */
-static const uint8_t LAYER_BTN[LY_COUNT] = {NB, B_FX, B_GLO, B_SEQ};
-static const char *const LAYER_NAME[LY_COUNT] = {"", "PUNCH", "MIX", "STEPS"};
+static const uint8_t LAYER_BTN[LY_COUNT] = {NB, B_FX, B_GLO, B_SEQ, B_SCL};
+static const char *const LAYER_NAME[LY_COUNT] = {"", "PUNCH", "MIX", "STEPS", "KEY"};
 
 static struct {
     uint8_t btn;                 /* the layer whose button is held (0 none) */
@@ -145,6 +147,16 @@ static void layer_key(uint32_t layer, uint32_t k, uint32_t down, uint32_t now)
         }
         return;
     }
+    if (layer == LY_SCALE) {                            /* any key: the key of the song, every synth track */
+        uint32_t i, root = (53u + k) % 12u;
+        if (!down)
+            return;
+        for (i = 0; i < NTRK; i++)
+            if (trk_synth(i))
+                trk[i].p[P_ROOT] = (int16_t)root;
+        ui_say("KEY ", N_NOTE[root]);
+        return;
+    }
     if (layer != LY_MIX || w < 0 || !down)
         return;
     if (w < 4) {
@@ -248,6 +260,20 @@ static void layers_knobs(uint32_t layer)
         } else if (layer == LY_MIX) {
             int16_t *lv = trk_level_p(k);
             *lv = (int16_t)clamp(*lv + accel(EN_K1 + k, s, 127), 0, 127);
+        } else if (layer == LY_SCALE) {
+            track_t *t = TSEL;
+            if (k == 1u) {                              /* the scale: every synth track */
+                uint32_t i;
+                int16_t v = (int16_t)clamp(t->p[P_SCALE] + s, TP[P_SCALE].min, TP[P_SCALE].max);
+                for (i = 0; i < NTRK; i++)
+                    if (trk_synth(i))
+                        trk[i].p[P_SCALE] = v;
+            } else if (!is_drum(t)) {
+                uint32_t id = k == 0u ? P_CHORD : k == 2u ? P_QUANT : P_TRANS;
+                t->p[id] = (int16_t)clamp(t->p[id] + s, TP[id].min, TP[id].max);
+                if (id == P_CHORD)
+                    chord_poly(t);
+            }
         } else if (layer == LY_STEP) {
             track_t *t = TSEL;
             if (ly.held) {
@@ -279,6 +305,8 @@ static uint32_t layers_key_leds(void)
             on = punch.req == (int8_t)w || (punch.req < 0 && (w & 3u) == 0u);
         else if (layer == LY_MIX)
             on = w < 4u ? !trk[w].p[P_MUTE] : w < 8u ? (int)((song.solo >> (w - 4u)) & 1u) : w == 15u;
+        else if (layer == LY_SCALE)                     /* the root's keys */
+            on = (53u + key_of_white(w)) % 12u == (uint32_t)TSEL->p[P_ROOT] % 12u;
         else if (layer == LY_STEP) {                    /* the set steps; the playhead blinks off */
             uint32_t idx = ly.page * 16u + w;
             on = idx < trk_len(TSEL) && step_on(&TSEL->step[idx]);
@@ -532,6 +560,48 @@ static void layer_screen_draw(void)
             ratio[2] = t->p[P_SSWING] * 10;
             ratio[3] = ((int32_t)len - 1) * 1000 / 63;
         }
+    }
+    else if (layer == LY_SCALE) {                       /* the white keys' notes / chords; the root lit */
+        static char kb[24];
+        track_t *t = TSEL;
+        uint32_t root = (uint32_t)t->p[P_ROOT] % 12u;
+        uint32_t mask = t->p[P_CHORD] && !t->p[P_SCALE] ? SCALE_MINOR : scale_mask(t);
+        str_cpy(kb, N_NOTE[root], 4);
+        str_cpy(kb + str_len(kb), " ", 2);
+        str_cpy(kb + str_len(kb), N_SCALE[clamp(t->p[P_SCALE], 0, TP[P_SCALE].max)], 8);
+        sub = kb;
+        for (i = 0; i < 16u; i++) {
+            uint32_t k = key_of_white(i), pc = (53u + k) % 12u, in = (mask >> ((pc + 12u - root) % 12u)) & 1u;
+            if (!is_drum(t) && t->p[P_CHORD]) {         /* CHORD: the chord this key plays */
+                uint8_t c[4];
+                uint32_t n = kb_map(t, k), m;
+                if (n != KB_SILENT && (m = chord_notes(t, n, c)) != 0u) {
+                    uint32_t third = m > 1u ? (uint32_t)(c[1] - c[0]) : 4u;
+                    str_cpy(tl[i].lab, N_NOTE[c[0] % 12u], 8);
+                    if (t->p[P_CHORD] == 5)
+                        str_cpy(tl[i].lab + str_len(tl[i].lab), "5", 2);
+                    else if (third == 3u)
+                        str_cpy(tl[i].lab + str_len(tl[i].lab), "m", 2);
+                    pc = c[0] % 12u;
+                    in = 1;
+                }
+            } else {
+                str_cpy(tl[i].lab, N_NOTE[pc], 8);
+            }
+            tl[i].bg = pc == root ? C_HI : C_LINE;
+            tl[i].fg = pc == root ? C_BLACK : in ? C_AMB : C_DIM;
+        }
+        lab[0] = "CHRD", lab[1] = "SCL", lab[2] = "QNT", lab[3] = "TRN";
+        str_cpy(v[0], N_CHORD[clamp(t->p[P_CHORD], 0, 5)], 10);
+        str_cpy(v[1], N_SCALE[clamp(t->p[P_SCALE], 0, TP[P_SCALE].max)], 10);
+        str_cpy(v[2], N_QUANT[clamp(t->p[P_QUANT], 0, 2)], 10);
+        fmt_int(v[3], t->p[P_TRANS]);
+        if (is_drum(t))
+            v[0][0] = v[2][0] = v[3][0] = 0;
+        ratio[0] = t->p[P_CHORD] * 200;
+        ratio[1] = t->p[P_SCALE] * 1000 / (TP[P_SCALE].max ? TP[P_SCALE].max : 1);
+        ratio[2] = t->p[P_QUANT] * 500;
+        ratio[3] = (t->p[P_TRANS] + 24) * 1000 / 48;
     }
     layer_title(LAYER_NAME[layer % LY_COUNT], sub);
     tiles_draw(tl);

@@ -51,6 +51,7 @@ enum {                          /* per-track parameters */
     /* Jangada: the modulation matrix (mod.c), NMOD slots of SRC DST AMT */
     P_M1SRC, P_M1DST, P_M1AMT, P_M2SRC, P_M2DST, P_M2AMT,
     P_M3SRC, P_M3DST, P_M3AMT, P_M4SRC, P_M4DST, P_M4AMT,
+    P_CHORD,                                   /* Jangada (after SLOOP): one key plays a chord of the scale (seq.c) */
     /* the engine's own parameters, NEDIT of them (Felucca had 8). Saved data does not depend
      * on these positions: projects and user presets store stable keys (P_KEY, params.c) */
     P_E0, P_E1, P_E2, P_E3, P_E4, P_E5, P_E6, P_E7,
