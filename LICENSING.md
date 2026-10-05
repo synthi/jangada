@@ -45,7 +45,9 @@ assets, is entirely governed by the GPL.
 | Fukiai icon font (Hügelton Instruments), web editor only | MIT | `web/fukiai.ttf`, `web/FUKIAI-LICENSE.txt` |
 | CrispyZebra by Leo Kuroshita (<https://github.com/hugelton/CrispyZebra>): the PHASE engine's waveforms are a C port of its oscillator | GPL-3.0 | `firmware/src/eng_phase.c` |
 | klattsch by Tony Gies (<https://github.com/tgies/klattsch>): design reference for the VOICE (formant) engine; no code copied. Formant data from Klatt (1980) / Hillenbrand et al. (1995) | MIT (klattsch) | credit only |
-| SLOOP 2.2 by isod89 (<https://github.com/isod89/sloop-fm1>), a Felucca fork: the punch-in effects, the master bus (DUST, DUCK, DJ filter), the layers (hold a button), the one-key chords and the TRACKS view are ported or adapted from it | GPL-3.0 | `firmware/src/punch.c`, `firmware/src/fx.c`, `firmware/src/ui_layers.c`, `firmware/src/seq.c` |
+| SLOOP 2.2 by isod89 (<https://github.com/isod89/sloop-fm1>), a Felucca fork: the punch-in effects, the master bus (DUST, DUCK, DJ filter), the layers (hold a button), the one-key chords, the TRACKS view, the synthesised drum kits, the PLATE reverb, the autosave, the update checks and the USB rescue are ported or adapted from it | GPL-3.0 | `firmware/src/punch.c`, `firmware/src/fx.c`, `firmware/src/ui_layers.c`, `firmware/src/seq.c` |
+| Felucca 1.0.1 by Leo Kuroshita / Hügelton Instruments: the FM6 engine (`eng_fm6.c`, its factory patches `tools/gen_fm6_patches.py`), the SPRING reverb, the engines' own envelopes | GPL-3.0 | `firmware/src/eng_fm6.c`, `firmware/src/fx.c` |
+| msfa (Google, 2012) / Dexed (Pascal Gauthier): the 6-operator FM core, ported to integer C by Felucca | Apache-2.0 | `firmware/src/fm6_core.c`, `LICENSES/Apache-2.0-msfa.txt` |
 | JieLi AC79 SDK: `uboot.boot`, `cfg_tool.bin`, `eq_cfg_hw.bin` are read from your SDK checkout at build time and placed in the package; no SDK files are in this tree | Apache-2.0 | <https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK> |
 
 ## Contributions

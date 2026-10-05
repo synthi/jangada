@@ -9,7 +9,7 @@
 
 # Jangada 🛶
 
-**Firmware alternativo para o M-VAVE FM-1**: nove motores de síntese, um analógico com superwave,
+**Firmware alternativo para o M-VAVE FM-1**: dez motores de síntese (com FM de 6 operadores), um analógico com superwave,
 matriz de modulação, drones que se sustentam sozinhos, ratchets e quatro trilhas, num synth de
 bolso baratinho. Um fork do [Felucca](https://github.com/hugelton/Felucca) de Leo Kuroshita
 (Hügelton Instruments). A felucca é o barco à vela do Nilo; a jangada é a nossa.
@@ -90,6 +90,28 @@ por trilha com o som, o motor, os passos e o playhead, o nível e os selos REC /
 - **16 parâmetros por motor** (o Felucca tem 8).
 - **20 presets novos**: texturas escuras e industriais, superwaves e seis drones.
 - **Hi-hats e crash** do kit GM tocam a própria amostra (soavam como toms).
+- **FM6**: FM de 6 operadores (o núcleo msfa do Dexed, portado pelo Felucca 1.0), 32 algoritmos,
+  8 patches de fábrica (PTCH F1–F8) e macros nos knobs (ALG FB MLVL MRAT MEG VMOD DTUN). O DIGITAL de
+  4 operadores continua.
+- **Bateria sintetizada** (do SLOOP): **GLO → KIT**, ou o knob PRESETS na trilha de bateria: o kit GM
+  sampleado ou 32 kits sintetizados (808, 909, TECHNO, INDUSTR, GLITCH, DUBSTEP, JUNGLE…).
+- **Reverbs** (**FX → REVERB**, TYPE): ROOM (a de sempre), SPRING (mola, do Felucca 1.0) e PLATE
+  (rede de atrasos estéreo, do SLOOP).
+
+### MIDI
+- **Pitch bend** (±2 semitons), **sustain** (CC64), **all notes off** (CC120 / 123), reset (CC121).
+- **Mod wheel**, **aftertouch** e **expressão** (CC11) como origens da matriz (MODW, AT, EXPR).
+- **GLO → GLOBAL CLK USB**: segue o clock do computador (tempo, start, stop).
+- **GLO → SYSTEM SYNC OUT**: manda clock pelo USB (24 por batida, start, stop).
+
+### Memória e segurança
+- **Autosave**: parado e sem mexer por alguns segundos, o projeto vai para a flash e volta ao ligar.
+  **OCT+** segurado ao ligar começa vazio; **HOME → NEW PROJECT** zera tudo.
+- **Atualização mais segura** (do SLOOP): o instalador recusa pacote danificado; o loader confere o
+  CRC antes de liberar o firmware novo.
+- **Resgate por USB**: **OCT−** segurado ao ligar (ou dois boots que falham) abre JANGADA USB RESCUE,
+  onde só o instalador roda. A calibração do painel: **OCT− + OCT+** ao ligar.
+- Menu (segure **HOME**): COLOR, SPEAKER (corta graves para o alto-falante), NEW PROJECT, ABOUT.
 
 ### Drones
 Os presets DRONE usam o arpejador em **RPT** a cada **4 compassos** com **HOLD**: toque um acorde,
@@ -150,11 +172,9 @@ sh tests/run_tests.sh         # todos os testes, no PC
 
 ## Próximos passos
 
-- Um motor **FM de 6 operadores** que carrega patches de DX7 (porte do msfa / Dexed).
-- MIDI completo (pitch bend, sustain, clock), backup de presets em `.syx`.
-- Uma revisão sutil da interface, para legibilidade.
-
-Correções que servem a todos vão também como pull request para o Felucca.
+- Áudio por USB (o FM-1 como entrada de áudio no computador).
+- Uma revisão da interface, para legibilidade (a fonte suavizada do Felucca 1.0).
+- Editor de patches FM6 no editor web; backup de presets em `.syx`.
 
 ## Créditos e licença
 

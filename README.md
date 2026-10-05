@@ -90,6 +90,28 @@ with the sound, the engine, the steps and the playhead, the level and the REC / 
 - **16 parameters per engine** (Felucca has 8).
 - **20 new presets**: dark and industrial textures, superwaves and six drones.
 - The GM kit's **hi-hats and crash** play their own samples (they sounded like toms).
+- **FM6**: 6-operator FM (Dexed's msfa core, as ported by Felucca 1.0), 32 algorithms, 8 factory
+  patches (PTCH F1–F8) and macros on the knobs (ALG FB MLVL MRAT MEG VMOD DTUN). The 4-operator DIGITAL
+  stays.
+- **Synthesised drums** (from SLOOP): **GLO → KIT**, or the PRESETS knob on the drum track: the sampled
+  GM kit or 32 synthesised kits (808, 909, TECHNO, INDUSTR, GLITCH, DUBSTEP, JUNGLE…).
+- **Reverbs** (**FX → REVERB**, TYPE): ROOM (as before), SPRING (from Felucca 1.0) and PLATE (a stereo
+  feedback delay network, from SLOOP).
+
+### MIDI
+- **Pitch bend** (±2 semitones), **sustain** (CC64), **all notes off** (CC120 / 123), reset (CC121).
+- **Mod wheel**, **aftertouch** and **expression** (CC11) as matrix sources (MODW, AT, EXPR).
+- **GLO → GLOBAL CLK USB**: follows the computer's clock (tempo, start, stop).
+- **GLO → SYSTEM SYNC OUT**: sends clock over USB (24 a beat, start, stop).
+
+### Storage and safety
+- **Autosave**: stopped and untouched for a few seconds, the project goes to flash and comes back at
+  power-on. **OCT+** held at power-on starts empty; **HOME → NEW PROJECT** clears everything.
+- **Safer updates** (from SLOOP): the installer refuses a damaged package; the loader checks the CRC
+  before it lets the new firmware start.
+- **USB rescue**: **OCT−** held at power-on (or two failed boots) opens JANGADA USB RESCUE, where only
+  the installer runs. Panel calibration: **OCT− + OCT+** at power-on.
+- Menu (hold **HOME**): COLOR, SPEAKER (low cut for the speaker), NEW PROJECT, ABOUT.
 
 ### Drones
 The DRONE presets run the arpeggiator in **RPT** every **4 bars** with **HOLD**: play a chord,
@@ -149,11 +171,9 @@ sh tests/run_tests.sh         # every test, on the PC
 
 ## Next
 
-- A **6-operator FM** engine that loads DX7 patches (a port of msfa / Dexed).
-- Full MIDI (pitch bend, sustain, clock), `.syx` preset backup.
-- A subtle UI pass, for legibility.
-
-Fixes that help everyone also go upstream to Felucca as pull requests.
+- USB audio (the FM-1 as an audio input on the computer).
+- A UI pass for legibility (Felucca 1.0's antialiased font).
+- An FM6 patch editor in the web editor; `.syx` preset backup.
 
 ## Credits and license
 
