@@ -909,6 +909,7 @@ static void draw_columns(void)
 }
 
 
+static int layers_draw(void);                       /* ui_layers.c */
 static void ui_draw(void)
 {
     ui.frame++;
@@ -917,6 +918,8 @@ static void ui_draw(void)
         ui.force = 0;
         return;
     }
+    if (layers_draw())                                  /* Jangada: a layer held (ui_layers.c) */
+        return;
     if (ui.confirm) {                                   /* clear-the-sequence dialog */
         if (ui.force) {
             lcd_fill(0, 0, 240, 240, C_BLACK);

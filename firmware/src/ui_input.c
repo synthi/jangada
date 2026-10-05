@@ -30,6 +30,9 @@ static const uint8_t FAM_BTN[FAM_COUNT] = {B_HOME, B_ENV, B_LFO, B_FX, B_SCL, B_
 
 static uint32_t cur_fam(void) { return ui.home ? FAM_HOME : cur_page()->fam; }
 
+static int layer_visible(void);                     /* ui_layers.c */
+static uint32_t layer_now(void);
+static void layers_leds(uint8_t *nl);
 static void ui_leds(void)
 {
     uint8_t nl[FM1_NCOL] = {0};
@@ -45,8 +48,12 @@ static void ui_leds(void)
     led_put(nl, panel.btn[B_REC], song.rec != 0u);
     led_put(nl, panel.btn[B_OCTDN], song.octave < 0);
     led_put(nl, panel.btn[B_OCTUP], song.octave > 0);
-    for (k = 0; k < 27u; k++)
-        led_put(nl, 14u + k, (int)((fm1_in.notes >> k) & 1u));
+    if (layer_visible()) {                              /* Jangada: a layer shows what its keys do */
+        layers_leds(nl);
+    } else {
+        for (k = 0; k < 27u; k++)
+            led_put(nl, 14u + k, (int)((fm1_in.notes >> k) & 1u));
+    }
     for (c = 0; c < FM1_NCOL; c++)
         fm1_led[c] = nl[c];
 }
@@ -60,6 +67,8 @@ static int32_t accel(uint32_t role, int32_t s, int32_t range)
         return s * (range > 150 ? 6 : 3);
     return s;
 }
+
+#include "ui_layers.c"          /* Jangada: hold FX / GLO = a layer (after SLOOP) */
 
 /* TRACKS page: KNOB 1 TRACK, 2 LEVEL (0 = mute; the drum track: GLO > DRUMS LEVEL),
  * 3 LEN of its pattern, 4 PAN. A track muted with MUTE (VOICE 2, the editor): the first
@@ -298,9 +307,8 @@ static void ui_input(void)
     int32_t s;
     static int8_t punch_shown = -1;
     t4_follow();
-    /* Jangada: FX held = the white keys are the punch-in effects (seq.c keyboard_block, punch.c); a tap of
-     * FX still opens its pages. Its name on screen when one starts */
-    punch.hold = (uint8_t)(!ui.menu && ((fm1_in.buttons >> panel.btn[B_FX]) & 1u));
+    layers_input(&pressed, fm1_ms);                     /* Jangada: FX / GLO tap, hold, lock (ui_layers.c) */
+    /* Jangada: the punch-in effect's name on screen when one starts (ui_layers.c: the FX layer) */
     if (punch.req != punch_shown) {
         punch_shown = punch.req;
         if (punch_shown >= 0)
@@ -417,7 +425,7 @@ static void ui_input(void)
         }
         }
     }
-    if (song.seq_mode && cur_page()->scope == SC_STEP)
+    if (song.seq_mode && cur_page()->scope == SC_STEP && !layer_now())
         seq_entry(notes);
 
     if ((s = panel_enc(EN_PRESET)) != 0 && (ui.home || cur_page()->graph == GR_BROWSE || cur_fam() == FAM_TRK)) {
@@ -433,6 +441,10 @@ static void ui_input(void)
     if ((s = panel_enc(EN_SELECT)) != 0) {          /* SELECT knob = global tempo */
         song.g[G_BPM] = (int16_t)clamp(song.g[G_BPM] + accel(EN_SELECT, s, 200), GP[G_BPM].min, GP[G_BPM].max);
         ui.bpm_t = 40;                              /* the header's BPM lights up; no message over the header */
+    }
+    if (layer_now()) {                                  /* Jangada: a layer has the knobs */
+        layers_knobs(layer_now());
+        return;
     }
     for (k = 0; k < 4u; k++) {
         const page_t *pg = cur_page();

@@ -348,6 +348,15 @@ static void input_off(track_t *t, uint32_t note)
     trk_note_off(t, note);                          /* other mode (ARP switched while held) */
 }
 
+/* Jangada: the layer the keys belong to (ui_layers.c sets it: a layer button held or locked open).
+ * LY_FX runs here (punch.c); the other layers' key-downs go to the UI through lk_q */
+enum { LY_NONE, LY_FX, LY_MIX, LY_COUNT };
+static volatile uint8_t kb_layer;
+#define LKQ 16u
+static volatile uint8_t lk_q[LKQ], lk_w;
+static volatile uint32_t lk_t[LKQ];
+static uint8_t lk_r;
+
 static void keyboard_block(void)
 {
     uint32_t cur = fm1_in.notes, ch, k;
@@ -359,12 +368,18 @@ static void keyboard_block(void)
         if (!((ch >> k) & 1u))
             continue;
         if ((cur >> k) & 1u) {                    /* the selected track; the key-up goes to the same one */
-            if (punch.hold) {                     /* Jangada: FX held, a white key = a punch-in effect */
-                int32_t fx = punch_key(k);        /* (fx.c punch.c); a black key does nothing */
-                kb_note[k] = KB_SILENT;           /* no note, and none to release */
-                if (fx >= 0) {
-                    punch.req = (int8_t)fx;
-                    punch.keybit = 1u << k;
+            if (kb_layer) {                       /* Jangada: a layer is held (ui_layers.c): no note, */
+                kb_note[k] = KB_SILENT;           /* and none to release */
+                if (kb_layer == LY_FX) {          /* FX: a white key = a punch-in effect (punch.c) */
+                    int32_t fx = punch_key(k);
+                    if (fx >= 0) {
+                        punch.req = (int8_t)fx;
+                        punch.keybit = 1u << k;
+                    }
+                } else if ((uint8_t)(lk_w - lk_r) < LKQ) {   /* the others: to the UI, with the time */
+                    lk_t[lk_w % LKQ] = fm1_ms;
+                    lk_q[lk_w % LKQ] = (uint8_t)k;
+                    lk_w++;
                 }
                 continue;
             }

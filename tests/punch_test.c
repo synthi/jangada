@@ -23,7 +23,7 @@ static void setup(void)
     host_preset(&trk[0], 0, 0);              /* ANALOG SAW LEAD on track 1 */
     trk[0].p[P_REL] = 60;
     punch.req = -1;
-    punch.hold = 0;
+    kb_layer = 0;
     punch.keybit = 0;
 }
 
@@ -116,7 +116,7 @@ int main(void)
     {   /* FX held: a white key starts its effect, plays no note; its key-up ends it */
         uint32_t i, sounding = 0;
         setup();
-        punch.hold = 1;
+        kb_layer = LY_FX;
         fm1_in.notes = 1u << 2;              /* G3: the 2nd white key, LOOP 8 */
         run(4, 0, 0);
         for (i = 0; i < NVOICE; i++)
@@ -126,7 +126,7 @@ int main(void)
         run(4, 0, 0);
         assert(punch.req == -1);
         fm1_in.notes = 0;
-        punch.hold = 0;
+        kb_layer = 0;
         run(4, 0, 0);
         fm1_in.notes = 1u << 2;              /* FX up: the key plays its note again */
         run(4, 0, 0);

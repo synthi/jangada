@@ -309,7 +309,7 @@ static void mono_remove(track_t *t, uint32_t note)
 static void trk_note_on(track_t *t, uint32_t note, uint32_t vel)
 {
     uint32_t any = 0, i, mode = (uint32_t)t->p[P_VOICE];
-    if (t->p[P_MUTE])
+    if (t->p[P_MUTE] || (song.solo && !((song.solo >> (uint32_t)(t - trk)) & 1u)))   /* (SOLO: Jangada) */
         return;
     if (is_drum(t)) {                                   /* the drum track: GM drums (drums.c) */
         drum_on(note, vel);
