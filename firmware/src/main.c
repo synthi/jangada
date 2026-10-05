@@ -229,26 +229,18 @@ static void fm1_main(void)
 
 void fm1_cstart(void)
 {
-    uint32_t *s, *d, p3, src, wdt;
+    uint32_t *s, *d, p3, src, wdt, boot_mode;
     fm1_time_init();
     fm1_reset_reason();
     p3 = fm1_boot.p3_rst;
     src = fm1_boot.rst_src;
     wdt = fm1_boot.wdt_con;
     fm1_wdt_arm(0x0D);
-    if (bootguard.magic != BOOTGUARD_MAGIC) {
-        bootguard.magic = BOOTGUARD_MAGIC;
-        bootguard.failed = 0;
-        bootguard.pending = 0;
-    }
-    if (bootguard.pending)
-        bootguard.failed++;
-    bootguard.pending = 1;
-    if (bootguard.failed >= 2u) {
-        bootguard.failed = 0;
-        bootguard.pending = 0;
+    if ((p3 & 1u) && !(p3 & (4u | 0x40u)))
+        bootguard_clear(&bootguard);           /* a power-on (not a watchdog or soft reset): no failed boot to count */
+    boot_mode = bootguard_begin(&bootguard);   /* Jangada (after SLOOP): failed boots -> the rescue, then ROM */
+    if (boot_mode == BOOT_ROM)
         fm1_enter_uboot();
-    }
     fm1_irq_init();
     for (d = _bss_start; d < _bss_end; d++)
         *d = 0;
@@ -263,6 +255,13 @@ void fm1_cstart(void)
     fm1_boot.p3_rst = (uint8_t)p3;
     fm1_boot.rst_src = src;
     fm1_boot.wdt_con = (uint8_t)wdt;
+#if FELUCCA_OTA
+    if (boot_mode == BOOT_RECOVERY || recovery_key())
+        recovery_main();                       /* OCT- held alone at power-on, or failed boots */
+#else
+    if (boot_mode == BOOT_RECOVERY)
+        fm1_enter_uboot();
+#endif
     fm1_main();
     for (;;)
         ;

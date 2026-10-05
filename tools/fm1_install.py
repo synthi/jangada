@@ -17,7 +17,9 @@ install finishes the write. Needs mido with python-rtmidi.
 
 Exit codes: 0 done, 1 cancelled or other error, 2 bad arguments or package,
 3 FM-1 not found, 4 connection lost or the device stopped, 5 timeout (no
-loader / no restart), 6 wrong model, or another identity after the install.
+loader / no restart), 6 wrong model, another identity after the install, or the
+FM-1 is in the update mode of another firmware (only the Jangada / Felucca
+loader, ota-FM-1_9XX, is resumed).
 """
 import argparse
 import queue
@@ -39,7 +41,7 @@ DELAY = {"open": 0.3, "start": 2.0, "reply": 0.01, "loader": 3.0, "reboot": 3.0,
          "wait_loader": 30.0, "wait_reboot": 40.0}
 
 EXIT = {"usage": 2, "badpkg": 2, "notfound": 3, "model": 6, "lost": 4, "stopped": 4, "badreq": 4,
-        "noloader": 5, "noreturn": 5, "mismatch": 6}
+        "noloader": 5, "noreturn": 5, "mismatch": 6, "foreign": 6}
 
 
 class InstallError(Exception):
@@ -354,6 +356,10 @@ class Updater:
         if model_of(dev.id.text) != model_of(product):
             dev.link.close()
             raise InstallError("model", f"the device is {dev.id.text}, the package is for {product}")
+        if dev.id.loader and not re.fullmatch(r"ota-FM-1_9\d\d", dev.id.text, re.I):
+            dev.link.close()           # another firmware's loader: its image layout may differ (after SLOOP)
+            raise InstallError("foreign", f"the FM-1 is in the update mode of another firmware ({dev.id.text}): "
+                                          "finish that update with its own updater (M-UPGRADE), then install again")
         ota = dev if dev.id.loader else self.check(dev, image, step)
         self.write(ota, image, step)
         return self.verify(product, step)
@@ -372,7 +378,57 @@ def load_package(path, force):
     if LOADER_MARK not in raw and not force:
         raise InstallError("badpkg", f"{path}: no Felucca update loader in this package; "
                                      "only Felucca's own packages are installed (--force overrides)")
-    return product, logical_image(raw)
+    image = logical_image(raw)
+    bad = package_damage(image)
+    if bad:
+        raise InstallError("badpkg", f"{path}: damaged package ({bad}); nothing was written. "
+                                     "Download it again.")
+    return product, image
+
+
+def _crc16(data, crc=0):
+    """CRC-16/XMODEM, as the package and the device use"""
+    for b in data:
+        crc ^= b << 8
+        for _ in range(8):
+            crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+    return crc
+
+
+def _dec(b):
+    """JieLi ENC stream cipher (its own inverse)"""
+    out, key = bytearray(b), 0xFFFF
+    for i in range(len(out)):
+        out[i] ^= key & 0xFF
+        key = ((key << 1) ^ (0x1021 if key & 0x8000 else 0)) & 0xFFFF
+    return bytes(out)
+
+
+def package_damage(image):
+    """what is wrong with the update image (header, file list, each file's CRC), or None; the device
+    only checks the loader before it rewrites the firmware, so a damaged file is caught here"""
+    if len(image) < 0x40:
+        return "too short"
+    hdr = _dec(image[0:0x40])
+    if _crc16(hdr[2:0x40]) != int.from_bytes(hdr[0:2], "little"):
+        return "header CRC"
+    count = int.from_bytes(hdr[8:10], "little")
+    if not 1 <= count <= 8 or len(image) < 0x40 + 0x50 * count:
+        return "file list"
+    lst = image[0x40:0x40 + 0x50 * count]
+    if _crc16(lst) != int.from_bytes(hdr[2:4], "little"):
+        return "file list CRC"
+    for i in range(count):
+        e = _dec(lst[i * 0x50:(i + 1) * 0x50])
+        dcrc = int.from_bytes(e[4:6], "little")
+        off = int.from_bytes(e[8:12], "little")
+        size = int.from_bytes(e[12:16], "little")
+        name = e[0x40:0x50].split(b"\0")[0].decode("ascii", "replace")
+        if off + size > len(image):
+            return f"{name}: cut short"
+        if _crc16(image[off:off + size]) != dcrc:
+            return f"{name}: CRC"
+    return None
 
 
 def not_found(up):

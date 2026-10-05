@@ -100,9 +100,17 @@ static int st_prog(uint32_t off, const void *src, uint32_t n)
 #include "upreset.c"          /* user presets (RAM mirror; flash with FELUCCA_FLASH) */
 #include "project.c"
 #if FELUCCA_OTA
+static uint8_t recovery_active;              /* Jangada: the USB rescue runs (recovery.c) */
+#define OTA_IDENTITY (recovery_active ? "FM-1_000" : FELUCCA_ID)   /* rescue: any package installs */
 #include "ota.c"
+static void recovery_poll(void);
 static uint32_t ota_now_ms(void) { return fm1_ms; }
-static void ota_idle(void) { fm1_wdt_feed(); }
+static void ota_idle(void)
+{
+    fm1_wdt_feed();
+    if (recovery_active)
+        recovery_poll();                     /* (no TIMER5 in the rescue: USB and the clock from here) */
+}
 static int ota_in_area(uint32_t off, uint32_t n) { return FL_IN(off, n, OTA_AREA, OTA_AREA + OTA_AREA_LEN); }
 static int ota_erase(uint32_t off)
 {
@@ -123,6 +131,8 @@ static void ota_show(uint32_t step, int32_t code)
 {
     static const char *const STEP[] = {"", "PACKAGE", "CHECK HEAD", "LOADER", "CONFIRM", "RESTART"};
     char b[24];
+    if (recovery_active)
+        return;                              /* keep the polled USB alive during the update */
     lcd_fill(0, 0, 240, 240, C_BLACK);
     draw_text_box(0, 92, 240, &FONT_S, "UPDATE", C_WHITE, 1);
     if (step < 9u) {
@@ -146,7 +156,7 @@ static void ota_show(uint32_t step, int32_t code)
 }
 static void ota_commit(const uint8_t *parm)
 {
-    bootguard.pending = 0;                              /* intentional reset */
+    bootguard_clear(&bootguard);                        /* intentional update reset */
     usb_detach();
     fm1_delay_ms(30);
     fm1_enter_update(parm);                             /* record into RAM, core reset (fm1_sys.h) */
@@ -157,5 +167,8 @@ static void ota_commit(const uint8_t *parm)
 #endif
 #if FELUCCA_CDC
 #include "console.c"
+#endif
+#if FELUCCA_OTA
+#include "recovery.c"        /* Jangada (after SLOOP): early, polled USB updater; no synth, no settings */
 #endif
 #include "main.c"

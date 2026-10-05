@@ -16,6 +16,7 @@ static uint8_t nor[0x100000], *logical;
 static size_t logical_len;
 static uint8_t rx[1024];
 static uint32_t rx_len, rx_full, now_ms, requests, erases, bad_range, record_cleared, f0_asked;
+static uint32_t corrupt_at, corrupt_once, no_finish;   /* the host serves a damaged byte / never says "success" */
 
 static uint32_t pack7(const uint8_t *in, uint32_t n, uint8_t *out)
 {
@@ -52,6 +53,10 @@ static int ota_wire_send(const uint8_t *p, uint32_t n)
     m[3] = (uint8_t)(len + 8); m[4] = (uint8_t)((len + 8) >> 8); m[5] = 0; m[6] = 0;
     memcpy(m + 7, &addr, 4);
     m[11] = (uint8_t)len; m[12] = (uint8_t)(len >> 8); m[13] = 0;
+    if (addr == 0xF0000000u && no_finish) {
+        f0_asked++;
+        return 0;                                    /* no reply */
+    }
     if (addr >= 0xE0000000u) {
         f0_asked += addr == 0xF0000000u;
         memset(m + 14, 0, len);
@@ -59,6 +64,11 @@ static int ota_wire_send(const uint8_t *p, uint32_t n)
     } else {
         if (addr + len > logical_len) { printf("read past the package %#x\n", addr); exit(1); }
         memcpy(m + 14, logical + addr, len);
+        if (corrupt_at && addr <= corrupt_at && corrupt_at < addr + len) {
+            m[14 + corrupt_at - addr] ^= 0x08;       /* (the frame's own checksum is fine: only the CRC sees it) */
+            if (corrupt_once)
+                corrupt_at = 0;
+        }
     }
     for (i = 6; i < 14 + len; i++) s += m[i];
     m[14 + len] = (uint8_t)~s;
@@ -95,6 +105,8 @@ static int ldr_prog(uint32_t off, const void *p, uint32_t n)
     return 0;
 }
 static void ldr_record_clear(void) { record_cleared++; }
+static uint32_t flash_unknown;
+static int ldr_flash_known(void) { return !flash_unknown; }
 static void ldr_progress(uint32_t done, uint32_t total) { (void)done; (void)total; }
 #include "../firmware/loader/ldr_core.c"
 
@@ -131,6 +143,14 @@ static uint32_t flash_off(const uint8_t *lg)        /* flash.bin offset in the l
 
 static int check(const char *what, int ok) { printf("%-56s %s\n", what, ok ? "ok" : "FAIL"); return ok ? 0 : 1; }
 
+static void put_record(void)                         /* a valid update record at 0xE4F00 (the SPL runs the loader) */
+{
+    uint8_t r[112] = {0};
+    r[2] = 0x0D; r[3] = 0x5A; r[4] = 0x01; r[5] = 0x5A; r[6] = 0x41; r[7] = 0x54;
+    ota_wr16(r, ota_crc16(r + 2, 78, 0));
+    memcpy(nor + 0xE4F00, r, sizeof r);
+}
+
 int main(int argc, char **argv)
 {
     size_t olen;
@@ -146,12 +166,7 @@ int main(int argc, char **argv)
     memset(nor, 0xFF, sizeof nor);
     memcpy(nor, old + ofo, 0x93000);
     memcpy(head, nor, sizeof head);
-    {
-        uint8_t r[112] = {0};
-        r[2] = 0x0D; r[3] = 0x5A; r[4] = 0x01; r[5] = 0x5A; r[6] = 0x41; r[7] = 0x54;
-        ota_wr16(r, ota_crc16(r + 2, 78, 0));
-        memcpy(nor + 0xE4F00, r, sizeof r);
-    }
+    put_record();
     rc = ldr_session();
     printf("  rc %d, %u requests, %u sector erases\n", rc, requests, erases);
     bad += check("install completes", rc == 0);
@@ -173,6 +188,50 @@ int main(int argc, char **argv)
         rc = ldr_session();
         bad += check("foreign key / damaged app head refused, nothing erased", rc == -6 && erases == 0);
         logical[nfo + 0x4000 + 5] = save;
+    }
+    /* one bit damaged on the way, once: the CRC sees it, the next pass rewrites that sector */
+    {
+        const uint8_t r6 = 0x41;                     /* byte 6 of a valid record ("AT"); 0xFF once erased */
+        memcpy(nor, old + ofo, 0x93000);
+        put_record();
+        record_cleared = 0;
+        corrupt_at = nfo + 0x30123u;
+        corrupt_once = 1;
+        rc = ldr_session();
+        bad += check("a byte damaged once: caught by the CRC, fixed by a 2nd pass", rc == 0 && record_cleared
+                     && nor[0xE4F06] == 0xFF && !memcmp(nor + 0x4000, logical + nfo + 0x4000, 0x93000 - 0x4000));
+        /* the package itself damaged (every pass): the record stays, nothing is booted */
+        memcpy(nor, old + ofo, 0x93000);
+        put_record();
+        record_cleared = 0;
+        corrupt_at = nfo + 0x30123u;
+        corrupt_once = 0;
+        rc = ldr_session();
+        bad += check("a damaged package: refused after 3 passes, the record stays", rc == -12 && !record_cleared
+                     && nor[0xE4F06] == r6);
+        corrupt_at = nfo + 0x100u;                   /* in the head: never written, still checked */
+        rc = ldr_session();
+        bad += check("... also when the damage is in the head", rc == -12 && !record_cleared);
+        corrupt_at = 0;
+        /* no "success" from the host: the record stays (the host can finish later) */
+        no_finish = 1;
+        rc = ldr_session();
+        bad += check("no \"success\" from the host: the record stays", rc == -13 && !record_cleared && nor[0xE4F06] == r6);
+        no_finish = 0;
+        rc = ldr_session();
+        bad += check("... and the next session finishes", rc == 0 && record_cleared && nor[0xE4F06] == 0xFF);
+    }
+    /* another flash chip: nothing written, the records go (the old firmware starts again) */
+    {
+        memcpy(nor, old + ofo, 0x93000);
+        put_record();
+        record_cleared = 0;
+        erases = 0;
+        flash_unknown = 1;
+        rc = ldr_session();
+        bad += check("unknown flash chip: nothing written, record dropped", rc == -14 && record_cleared && erases == 1
+                     && nor[0xE4F06] == 0xFF && !memcmp(nor, old + ofo, 0x93000));
+        flash_unknown = 0;
     }
     printf("%s\n", bad ? "LOADER TEST FAILED" : "loader test passed");
     return bad != 0;

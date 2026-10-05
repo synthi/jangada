@@ -247,8 +247,9 @@ static int is_drum(const track_t *t) { return t == TDRUM && !song.t4; }
 static int trk_synth(uint32_t i) { return i < NPART || (i == TRK_DRUM && song.t4); }
 #define RING_PUBLISH() __asm__ volatile("" ::: "memory")   /* slot store before the index update */
 static volatile uint32_t fm1_ms;  /* milliseconds since boot (TIMER4-based, TIMER5 ISR in main.c) */
-/* boot-loop guard (main.c): two boots in a row that die in the first 30 s -> UBOOT */
-#define BOOTGUARD_MAGIC 0x42475244u
-struct { uint32_t magic, failed, pending; } bootguard __attribute__((section(".noinit")));
+/* boot-loop guard (main.c): two boots in a row that die in the first 30 s -> the USB rescue
+ * (recovery.c); the rescue itself dying -> UBOOT (Jangada, after SLOOP: bootguard.h) */
+#include "bootguard.h"
+bootguard_t bootguard __attribute__((section(".noinit")));
 
 #include "keys.h"                /* Jangada: stable keys of the P_* parameters (saved data) */
