@@ -30,10 +30,12 @@ static uint8_t sync_reload;                  /* engine / preset / project / user
 #define ACC C_HI                   /* amber everywhere; white is the only accent */
 #define VAL(c) ((c) == ui.hot_col && ui.hot_t ? C_WHITE : C_HI)
 #define RATIO(d, v) ((d)->max > (d)->min ? ((int32_t)(v) - (d)->min) * 1000 / ((d)->max - (d)->min) : -1)
-/* layout: four 60 px columns, 4 px inset */
-/* Terminus 8x16 (S) and 16x32 (L) */
+/* layout: four 60 px columns, each a card (Jangada, after Felucca 1.0); text lines are the 16 px
+ * (S, M) and 32 px (L) boxes of the old Terminus cells (gfx.c: aafont_t box / base) */
 #define Y_HEAD 0
 #define H_HEAD 20
+#define COL_Y 21                      /* the column strips: rows 21 .. 72, the cards 22 .. 71 */
+#define COL_H 52
 #define Y_LABEL 26
 #define Y_VALUE 44
 #define Y_GAUGE 64

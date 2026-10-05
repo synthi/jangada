@@ -536,17 +536,17 @@ static void tiles_draw(const tile_t *tl)
         return;
     ly.tiles = sig;
     for (r = 0; r < 4u; r++) {
-        cv_begin(240, 36, C_BLACK);
+        cv_begin(240, 36, C_BG);
         for (c = 0; c < 4u; c++) {
             const tile_t *t = &tl[r * 4u + c];
             int32_t x = 2 + (int32_t)c * 60;
             uint32_t m;
-            cv_rect(x, 2, 56, 32, t->bg);
+            cv_rrect(x, 2, 56, 32, 5, t->bg, C_BG);        /* a rounded tile (Felucca 1.0's cards) */
             if (t->top)
-                cv_rect(x, 2, 56, 3, t->top);
-            cv_text(x + 28 - text_w(&FONT_S, t->lab) / 2, 8, &FONT_S, t->lab, t->fg);
+                cv_rect(x + 5, 3, 46, 2, t->top);
+            cv_text(x + 28 - text_w(&FONT_S, t->lab) / 2, t->marks ? 7 : 10, &FONT_S, t->lab, t->fg);
             for (m = 0; m < t->marks; m++)
-                cv_rect(x + 22 + (int32_t)m * 5, 27, 3, 3, t->fg);
+                cv_rrect(x + 22 + (int32_t)m * 5, 26, 3, 3, 1, t->fg, t->bg);
         }
         cv_blit(0, 40 + r * 36);
     }
@@ -558,15 +558,14 @@ static void layer_title(const char *name, const char *sub)
     if (!ui.force && sig == ly.head)
         return;
     ly.head = sig;
-    cv_begin(240, 40, C_BLACK);
+    cv_begin(240, 40, C_BG);
     cv_text(4, 2, &FONT_L, name, C_HI);
     cv_text(4 + text_w(&FONT_L, name) + 10, 18, &FONT_S, ui.msg_t ? ui.msg : sub, ui.msg_t ? C_WHITE : C_GRAY);
     if (ly.lock) {                                      /* locked open: any button lets it go */
-        int32_t w = text_w(&FONT_S, "LOCK") + 8;
-        cv_rect(236 - w, 4, w, 18, C_WHITE);
-        cv_text(240 - w, 5, &FONT_S, "LOCK", C_BLACK);
+        int32_t w = text_w(&FONT_S, "LOCK") + 12;
+        cv_rrect(236 - w, 4, w, 18, 9, C_WHITE, C_BG);
+        cv_text(242 - w, 5, &FONT_S, "LOCK", C_BLACK);
     }
-    cv_rect(0, 38, 240, 1, C_LINE);
     cv_blit(0, 0);
 }
 
@@ -597,15 +596,17 @@ static void layer_dials(const char *const lab[4], const char *const val[4], cons
     if (!ui.force && sig == ly.foot)
         return;
     ly.foot = sig;
-    cv_begin(240, 56, C_BLACK);
-    for (k = 0; k < 4u; k++) {
+    cv_begin(240, 56, C_BG);
+    for (k = 0; k < 4u; k++) {                          /* a card per knob: dial, label, value */
         int32_t cx = 30 + 60 * (int32_t)k;
-        uint16_t hot = ui.hot_t && ui.hot_col == k ? C_WHITE : C_AMB;
+        uint16_t hot = ui.hot_t && ui.hot_col == k ? C_WHITE : C_HI;
+        const felucca_font_t *vf = text_w(&FONT_M, val[k]) <= 54 ? &FONT_M : &FONT_S;
         if (!lab[k][0])
             continue;
-        ly_dial(cx, 13, 11, ratio[k], C_HI, C_DIM);
-        cv_text(cx - text_w(&FONT_S, lab[k]) / 2, 25, &FONT_S, lab[k], C_GRAY);
-        cv_text(cx - text_w(&FONT_S, val[k]) / 2, 40, &FONT_S, val[k], hot);
+        cv_card(cx - 28, 0, 56, 56);
+        ly_dial(cx, 14, 11, ratio[k], C_HI, C_LINE);
+        cv_text(cx - text_w(&FONT_S, lab[k]) / 2, 24, &FONT_S, lab[k], C_GRAY);
+        cv_text(cx - text_w(vf, val[k]) / 2, 38, vf, val[k], hot);
     }
     cv_blit(0, 184);
 }
@@ -618,7 +619,7 @@ static void layer_screen_draw(void)
     int32_t ratio[4] = {-1, -1, -1, -1};
     uint32_t i, layer = layer_now();
     if (!ly.shown) {
-        lcd_fill(0, 0, 240, 240, C_BLACK);
+        lcd_fill(0, 0, 240, 240, C_BG);
         ui.force = 1;
         ly.shown = 1;
     }
@@ -632,7 +633,7 @@ static void layer_screen_draw(void)
         for (i = 0; i < 16u; i++) {
             int on = punch.req == (int8_t)i;
             str_cpy(tl[i].lab, PSHORT[i], 8);
-            tl[i].bg = on ? C_WHITE : C_LINE;
+            tl[i].bg = on ? C_WHITE : C_SURF;
             tl[i].fg = on ? C_BLACK : C_AMB;
             tl[i].top = on ? 0 : (i & 4u) ? C_DIM : C_GRAY;   /* rows alternate: easier to count */
         }
@@ -655,18 +656,18 @@ static void layer_screen_draw(void)
         static const char *const L[4] = {"T1", "T2", "T3", "T4"};
         sub = "MUTE  SOLO  TAP";
         for (i = 0; i < 16u; i++) {
-            tl[i].bg = C_BLACK;
+            tl[i].bg = C_BG;
             tl[i].fg = C_DIM;
         }
         for (i = 0; i < 4u; i++) {
             int m = trk[i].p[P_MUTE] != 0, so = (song.solo >> i) & 1u;
             str_cpy(tl[i].lab, "MUTE 1", 8);
             tl[i].lab[5] = (char)('1' + i);
-            tl[i].bg = m ? C_LINE : C_AMB;
+            tl[i].bg = m ? C_SURF : C_AMB;
             tl[i].fg = m ? C_DIM : C_BLACK;
             str_cpy(tl[4 + i].lab, "SOLO 1", 8);
             tl[4 + i].lab[5] = (char)('1' + i);
-            tl[4 + i].bg = so ? C_WHITE : C_LINE;
+            tl[4 + i].bg = so ? C_WHITE : C_SURF;
             tl[4 + i].fg = so ? C_BLACK : C_GRAY;
             tl[4 + i].top = C_DIM;
         }
@@ -690,7 +691,7 @@ static void layer_screen_draw(void)
             const step_t *st = &t->step[idx];
             int on = step_on(st);
             if (idx >= len) {
-                tl[i].bg = C_BLACK;
+                tl[i].bg = C_BG;
                 continue;
             }
             if (on)
@@ -699,7 +700,7 @@ static void layer_screen_draw(void)
                 str_cpy(tl[i].lab, "--", 8);
             else
                 fmt_int(tl[i].lab, (int32_t)idx + 1);
-            tl[i].bg = on ? ((st->flags & SF_ACCENT) ? C_HI : C_AMB) : C_LINE;
+            tl[i].bg = on ? ((st->flags & SF_ACCENT) ? C_HI : C_AMB) : C_SURF;
             tl[i].fg = on ? C_BLACK : C_DIM;
             tl[i].marks = (uint8_t)(on ? (st->flags & SF_RATCH) >> SF_RATCH_SH : 0u);
             if (on && (st->flags & SF_CHANCE))
@@ -757,17 +758,17 @@ static void layer_screen_draw(void)
         track_t *t = TSEL;
         int drum = is_drum(t);
         for (i = 0; i < 16u; i++) {
-            tl[i].bg = C_BLACK;
+            tl[i].bg = C_BG;
             tl[i].fg = C_DIM;
             if (i < NENGINES) {
                 int on = !drum && i == t->eng_req;
                 str_cpy(tl[i].lab, ENGINES[i]->name, 8);
-                tl[i].bg = on ? C_WHITE : C_LINE;
+                tl[i].bg = on ? C_WHITE : C_SURF;
                 tl[i].fg = on ? C_BLACK : drum ? C_DIM : C_AMB;
             }
         }
         str_cpy(tl[15].lab, song.g[G_T4] ? "T4 SYN" : "T4 DRM", 8);
-        tl[15].bg = C_LINE;
+        tl[15].bg = C_SURF;
         tl[15].fg = C_GRAY;
         tl[15].top = C_DIM;
         str_cpy(tr, "TRACK 1", sizeof tr);
@@ -820,7 +821,7 @@ static void layer_screen_draw(void)
             } else {
                 str_cpy(tl[i].lab, N_NOTE[pc], 8);
             }
-            tl[i].bg = pc == root ? C_HI : C_LINE;
+            tl[i].bg = pc == root ? C_HI : C_SURF;
             tl[i].fg = pc == root ? C_BLACK : in ? C_AMB : C_DIM;
         }
         lab[0] = "CHRD", lab[1] = "SCL", lab[2] = "QNT", lab[3] = "TRN";
@@ -870,7 +871,7 @@ static void tracks_head(void)
     if (!ui.force && sig == tr_sig[NTRK])
         return;
     tr_sig[NTRK] = sig;
-    cv_begin(240, 40, C_BLACK);
+    cv_begin(240, 40, C_BG);
     {
         int32_t x = cv_text(4, 2, &FONT_L, b, ui.bpm_t ? C_WHITE : C_HI);
         cv_text(x + 4, 18, &FONT_S, "BPM", C_GRAY);
@@ -886,12 +887,11 @@ static void tracks_head(void)
             cv_rect(116, 13, 10, 10, C_DIM);
         cv_text(132, 9, &FONT_S, p, song.playing ? C_WHITE : C_DIM);
         if (any_rec) {
-            int32_t w = text_w(&FONT_S, "REC") + 8;
-            cv_rect(236 - w, 8, w, 18, C_WHITE);
-            cv_text(240 - w, 9, &FONT_S, "REC", C_BLACK);
+            int32_t w = text_w(&FONT_S, "REC") + 12;
+            cv_rrect(236 - w, 8, w, 18, 9, C_WHITE, C_BG);
+            cv_text(242 - w, 9, &FONT_S, "REC", C_BLACK);
         }
     }
-    cv_rect(0, 38, 240, 1, C_LINE);
     cv_blit(0, 0);
 }
 
@@ -914,39 +914,40 @@ static void tracks_row(uint32_t c)
     if (!ui.force && sig == tr_sig[c])
         return;
     tr_sig[c] = sig;
-    cv_begin(240, 34, C_BLACK);
+    cv_begin(240, 34, C_BG);
+    cv_card(2, 0, 236, 33);                             /* a card per track (Felucca 1.0's look) */
     {   /* the number: lit when selected */
         char b[2] = {(char)('1' + c), 0};
-        cv_rect(2, 1, 26, 31, sel ? C_HI : C_LINE);
-        cv_text(15 - text_w(&FONT_S, b) / 2, 8, &FONT_S, b, sel ? C_BLACK : C_GRAY);
+        cv_rrect(5, 3, 23, 27, 4, sel ? C_HI : C_RAISE, C_SURF);
+        cv_text(17 - text_w(&FONT_M, b) / 2, 8, &FONT_M, b, sel ? C_BLACK : C_GRAY);
     }
     {   /* the sound and its engine; the badges on the right */
-        int32_t x = cv_text(34, 0, &FONT_S, name, mute ? C_DIM : sel ? C_HI : C_AMB), bx = 238;
+        int32_t x = cv_text(34, 1, &FONT_S, name, mute ? C_DIM : sel ? C_HI : C_AMB), bx = 234;
         const char *badge[3] = {rec ? "REC" : 0, solo ? "SOLO" : 0, t->p[P_MUTE] ? "MUTE" : 0};
         uint32_t k;
         for (k = 0; k < 3u; k++) {
             int32_t w;
             if (!badge[k])
                 continue;
-            w = text_w(&FONT_S, badge[k]) + 6;
+            w = text_w(&FONT_S, badge[k]) + 10;
             bx -= w;
-            cv_rect(bx, 1, w, 15, k == 2u ? C_DIM : C_WHITE);
-            cv_text(bx + 3, 0, &FONT_S, badge[k], C_BLACK);
+            cv_rrect(bx, 3, w, 15, 7, k == 2u ? C_GRAY : C_WHITE, C_SURF);
+            cv_text(bx + 5, 2, &FONT_S, badge[k], C_BLACK);
             bx -= 3;
         }
         if (x + 8 + text_w(&FONT_S, eng) < bx)
-            cv_text(x + 8, 0, &FONT_S, eng, C_DIM);
+            cv_text(x + 8, 1, &FONT_S, eng, C_DIM);
     }
     for (i = 0; i < 16u; i++) {                         /* the steps of the page; the playhead under */
         int32_t x = 34 + (int32_t)i * 11;
-        uint16_t col = page * 16u + i >= len ? C_BLACK : (steps >> i) & 1u ? (sel ? C_HI : C_AMB) : C_LINE;
-        cv_rect(x, 19, 9, 8, col);
+        uint16_t col = page * 16u + i >= len ? C_SURF : (steps >> i) & 1u ? (sel ? C_HI : C_AMB) : C_RAISE;
+        cv_rrect(x, 19, 9, 8, 2, col, C_SURF);
         if (i == ph)
-            cv_rect(x, 29, 9, 2, C_WHITE);
+            cv_rect(x, 28, 9, 2, C_WHITE);
     }
-    cv_rect(212, 22, 26, 3, C_LINE);                    /* the level */
+    cv_rect(212, 22, 22, 3, C_RAISE);                   /* the level */
     if (!mute)
-        cv_rect(212, 22, (int32_t)(lvl * 26u / 127u), 3, sel ? C_HI : C_GRAY);
+        cv_rect(212, 22, (int32_t)(lvl * 22u / 127u), 3, sel ? C_HI : C_GRAY);
     cv_blit(0, (uint32_t)y0);
 }
 
@@ -958,7 +959,7 @@ static void tracks_screen_draw(void)
     const track_t *t = TSEL;
     uint32_t c, lvl = trk_level(song.sel);
     if (!ly.shown) {
-        lcd_fill(0, 0, 240, 240, C_BLACK);
+        lcd_fill(0, 0, 240, 240, C_BG);
         ui.force = 1;
         ly.shown = 1;
     }
@@ -993,7 +994,7 @@ static int layers_draw(void)
     uint32_t want = layer_visible() ? 1u : (!ui.home && !ui.confirm && cur_page()->scope == SC_TRK) ? 2u : 0u;
     if (want != which && ly.shown) {
         ly.shown = 0;                                   /* another screen: from black, everything */
-        lcd_fill(0, 0, 240, 240, C_BLACK);
+        lcd_fill(0, 0, 240, 240, C_BG);
         ui.force = 1;
     }
     which = (uint8_t)want;

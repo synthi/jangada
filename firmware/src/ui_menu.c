@@ -16,35 +16,37 @@ static void draw_menu(void)
         return;
     ui.menu_sig = sig;
     if (ui.force)                                   /* head + rule + two bands cover rows 0..229 */
-        lcd_fill(0, H_HEAD + 1 + 124 + 85, 240, 240 - (H_HEAD + 1 + 124 + 85), C_BLACK);
-    cv_begin(240, H_HEAD, C_BLACK);
+        lcd_fill(0, H_HEAD + 1 + 124 + 85, 240, 240 - (H_HEAD + 1 + 124 + 85), C_BG);
+    cv_begin(240, H_HEAD, C_BG);
     cv_text(4, 1, &FONT_S, ui.menu == 2 ? "ABOUT" : "MENU", C_HI);
     cv_blit(0, Y_HEAD);
-    lcd_fill(0, H_HEAD, 240, 1, C_LINE);
+    lcd_fill(0, H_HEAD, 240, 1, C_BG);
     for (pass = 0; pass < 2u; pass++) {             /* the canvas holds 124 rows: draw in two bands */
-        cv_begin(240, pass ? 85u : 124u, C_BLACK);
+        cv_begin(240, pass ? 85u : 124u, C_BG);
         cv_oy = pass ? -124 : 0;
         if (ui.menu == 2) {
-            cv_text(4, 4, &FONT_L, "JANGADA", C_HI);
-            cv_text(4, 36, &FONT_S, FELUCCA_VERSION, C_HI);
-            cv_text(236 - text_w(&FONT_S, FELUCCA_DATE), 36, &FONT_S, FELUCCA_DATE, C_GRAY);   /* build date (build.py) */
-            cv_text(4, 52, &FONT_S, "GITHUB.COM/ZEDNAKED/JANGADA", C_AMB);
-            cv_text(4, 70, &FONT_S, "FORK OF FELUCCA BY", C_GRAY);
-            cv_text(cv_text(4, 84, &FONT_S, "LEO KUROSHITA", C_HI) + 8, 84, &FONT_S, "H\xDCGELTON", C_AMB);   /* Latin-1 U-umlaut */
-            cv_text(cv_text(4, 100, &FONT_S, "+ SLOOP", C_HI) + 8, 100, &FONT_S, "ISOD89", C_AMB);
-            cv_text(4, 116, &FONT_S, "GPL-3.0, NO WARRANTY", C_HI);
-            cv_text(4, 131, &FONT_S, "FM6: MSFA / DEXED (APACHE)", C_DIM);
-            cv_text(4, 143, &FONT_S, "PHASE: CRISPYZEBRA (GPL)", C_DIM);
-            cv_text(4, 155, &FONT_S, "VOICE: REF. KLATTSCH (MIT)", C_DIM);
-            cv_text(4, 167, &FONT_S, "SAMPLES: VERSILIAN (CC0)", C_DIM);
-            cv_text(4, 179, &FONT_S, "+ H\xDCGELTON SAMPLE PACK", C_DIM);
-            cv_text(4, 191, &FONT_S, "FONT: TERMINUS (OFL)", C_DIM);
+            cv_text(4, 2, &FONT_L, "JANGADA", C_HI);
+            cv_text(4, 32, &FONT_S, FELUCCA_VERSION, C_HI);
+            cv_text(236 - text_w(&FONT_S, FELUCCA_DATE), 32, &FONT_S, FELUCCA_DATE, C_GRAY);   /* build date (build.py) */
+            cv_text(4, 46, &FONT_S, "GITHUB.COM/ZEDNAKED/JANGADA", C_AMB);
+            cv_text(4, 60, &FONT_S, "FORK OF FELUCCA BY", C_GRAY);
+            cv_text(cv_text(4, 73, &FONT_S, "LEO KUROSHITA", C_HI) + 8, 73, &FONT_S, "H\xDCGELTON", C_AMB);   /* Latin-1 U-umlaut */
+            cv_text(cv_text(4, 86, &FONT_S, "+ SLOOP", C_HI) + 8, 86, &FONT_S, "ISOD89", C_AMB);
+            cv_text(4, 99, &FONT_S, "GPL-3.0, NO WARRANTY", C_HI);
+            {   /* the credits, on a card */
+                static const char *const CR[7] = {"FM6: MSFA / DEXED (APACHE)", "PHASE: CRISPYZEBRA (GPL)",
+                                                  "VOICE: REF. KLATTSCH (MIT)", "SAMPLES: VERSILIAN (CC0)",
+                                                  "+ H\xDCGELTON SAMPLE PACK", "FONT: INTER TIGHT (OFL)",
+                                                  "ICONS: FUKIAI (MIT)"};
+                cv_card(2, 117, 236, 92);
+                for (i = 0; i < 7u; i++)
+                    cv_text(10, 119 + (int32_t)i * 12, &FONT_S, CR[i], C_GRAY);
+            }
         } else {
-            for (i = 0; i < MI_COUNT; i++) {
+            for (i = 0; i < MI_COUNT; i++) {          /* a row card each, the selected one lit */
                 int32_t y = 4 + (int32_t)i * 24;
                 int sel = i == ui.menu_sel;
-                if (sel)
-                    cv_rect(4, y + 6, 3, 3, C_WHITE);
+                cv_rrect(4, y - 3, 232, 22, 5, sel ? C_SEL : C_SURF, C_BG);
                 cv_text(14, y, &FONT_S, MI_NAME[i], sel ? C_WHITE : C_GRAY);
                 if (i == MI_SPEAKER)
                     cv_text(110, y, &FONT_S, settings.lowcut ? "LOW CUT ON" : "OFF", C_HI);
@@ -52,7 +54,7 @@ static void draw_menu(void)
                     uint32_t k;
                     cv_text(90, y, &FONT_S, PALETTES[settings.palette].name, C_HI);
                     for (k = 0; k < 5u; k++)
-                        cv_rect(160 + (int32_t)k * 14, y + 3, 10, 10, pal[k]);
+                        cv_rrect(160 + (int32_t)k * 14, y + 2, 11, 11, 2, pal[k], sel ? C_SEL : C_SURF);
                 }
             }
             cv_text(4, 146, &FONT_S, ui.menu_sel == MI_SPEAKER ? "ON: LESS BASS (SPEAKER)" :

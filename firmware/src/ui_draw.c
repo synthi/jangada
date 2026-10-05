@@ -15,12 +15,18 @@ static int is_eng_name(const char *s)                 /* one of the ENGINES[]->n
     return 0;
 }
 
+/* host tests hook in here (tests/layers_test.c: no label, value or unit is cut); nothing in the firmware */
+#ifndef UI_HOOK_CUT
+#define UI_HOOK_CUT(src, maxw) ((void)0)
+#endif
 /* at most 5 characters, and no wider than maxw */
 static void fit(char *d, const char *src, const felucca_font_t *f, int32_t maxw)
 {
     str_cpy(d, src, is_eng_name(src) ? 8 : 6);           /* engine names are kept whole */
-    while (d[0] && text_w(f, d) > maxw)
+    while (d[0] && text_w(f, d) > maxw) {
+        UI_HOOK_CUT(src, maxw);
         d[str_len(d) - 1u] = 0;
+    }
 }
 
 static int32_t batt_level(void)                         /* ADC ch3 thresholds */
@@ -49,7 +55,7 @@ static void draw_head(void)
     if (!ui.force && sig == ui.head_sig)
         return;
     ui.head_sig = sig;
-    cv_begin(240, H_HEAD, C_BLACK);
+    cv_begin(240, H_HEAD, C_BG);
     if (ui.msg_t) {
         cv_text(4, 1, &FONT_S, ui.msg, C_HI);
         cv_blit(0, Y_HEAD);
@@ -103,34 +109,37 @@ static void draw_head(void)
     cv_blit(0, Y_HEAD);
 }
 /* full redraw: the strips (head, columns, graph, foot) cover the rest, so only
- * the space between them is cleared, then the rules are drawn */
+ * the space between them is cleared (Jangada: cards, no rules) */
 static void draw_frame(void)
 {
-    uint32_t i;
-    lcd_fill(0, H_HEAD, 240, Y_LABEL - H_HEAD, C_BLACK);
-    lcd_fill(0, Y_SEP_END, 240, Y_GRAPH - Y_SEP_END, C_BLACK);
-    lcd_fill(0, Y_GRAPH + H_GRAPH, 240, Y_FOOT - Y_GRAPH - H_GRAPH, C_BLACK);
-    for (i = 0; i < 4u; i++)                            /* left inset of each column */
-        lcd_fill(i * 60u, Y_LABEL, 4, Y_SEP_END - Y_LABEL, C_BLACK);
-    lcd_fill(0, H_HEAD, 240, 1, C_LINE);
-    lcd_fill(0, Y_FOOT - 2, 240, 1, C_LINE);
-    for (i = 1; i < 4u; i++)
-        lcd_fill(i * 60u - 1u, H_HEAD + 4, 1, Y_SEP_END - H_HEAD - 4, C_LINE);
+    lcd_fill(0, H_HEAD, 240, COL_Y - H_HEAD, C_BG);
+    lcd_fill(0, COL_Y + COL_H, 240, Y_GRAPH - COL_Y - COL_H, C_BG);
+    lcd_fill(0, Y_GRAPH + H_GRAPH, 240, Y_FOOT - Y_GRAPH - H_GRAPH, C_BG);
 }
 
-/* one column: [icon] LABEL / value unit / gauge, redrawn only when it changed.
- * ratio: 0..1000 for the gauge, -1 = no gauge. icon: ICON_* (icons.c), ICON_AUTO = by label */
+/* one column, a card: [icon] LABEL / value unit / gauge, redrawn only when it changed. The value is
+ * M (15 px) when it fits with its unit, else S. ratio: 0..1000 for the gauge, -1 = no gauge.
+ * icon: ICON_* (icons.c), ICON_AUTO = by label */
 #define LABEL_X (FELUCCA_ICONS ? ICON_CELL + ICON_GAP : 0)
+#define COL_X 4                                         /* the card's content: x 4 .. 55 */
+#define COL_IN 52
 static void draw_column(uint32_t c, const char *label, const char *val, const char *unit, uint16_t vc,
                         int32_t ratio, uint32_t icon)
 {
-    char l[8], v[8], u[8], key[32];
-    int32_t x, gw = 52, fx;
+    char l[8], v[10], u[8], key[32];
+    const felucca_font_t *vf;
+    int32_t x, gw = COL_IN, fx;
     if (icon == ICON_AUTO)
         icon = icon_for_label(label);
-    fit(l, label, &FONT_S, 54 - LABEL_X);
-    fit(v, val, &FONT_S, is_eng_name(val) ? 56 : 40);   /* engine names whole */
-    fit(u, unit, &FONT_S, 54 - text_w(&FONT_S, v) - 3);
+    if (str_eq(unit, label))
+        unit = "";                                      /* BPM 120 BPM, USB MIDI USB: once is enough */
+    str_cpy(l, label, 6);
+    if (icon != ICON_NONE && text_w(&FONT_S, l) > COL_IN - LABEL_X)
+        icon = ICON_NONE;                               /* a long label takes the icon's room */
+    fit(l, label, &FONT_S, COL_IN - (icon != ICON_NONE ? LABEL_X : 0));
+    fit(v, val, &FONT_S, COL_IN);                       /* (engine names whole) */
+    vf = text_w(&FONT_M, v) + (unit[0] ? 2 + text_w(&FONT_S, unit) : 0) <= COL_IN ? &FONT_M : &FONT_S;
+    fit(u, unit, &FONT_S, COL_IN - text_w(vf, v) - 2);
     str_cpy(key, l, 8);                                 /* cache key: texts + colour + gauge */
     str_cpy(key + str_len(key), "|", 2);
     str_cpy(key + str_len(key), v, 8);
@@ -151,20 +160,22 @@ static void draw_column(uint32_t c, const char *label, const char *val, const ch
     if (!ui.force && str_eq(key, ui.col[c]))
         return;
     str_cpy(ui.col[c], key, sizeof ui.col[c]);
-    cv_begin(55, Y_SEP_END - Y_LABEL, C_BLACK);         /* x 4..58: the rule at 59 stays */
+    cv_begin(60, COL_H, C_BG);
+    if (l[0] || v[0])
+        cv_card(2, 1, 56, COL_H - 2);                   /* screen rows 22 .. 71 */
     if (FELUCCA_ICONS && icon != ICON_NONE && l[0])
-        cv_icon(0, 1, icon, C_GRAY);                    /* icon rows 1..10 = the label's cap height */
-    cv_text(l[0] ? LABEL_X : 0, 0, &FONT_S, l, C_GRAY);
-    x = cv_text(0, Y_VALUE - Y_LABEL, &FONT_S, v, vc);
-    cv_text(x + 3, Y_VALUE - Y_LABEL, &FONT_S, u, C_DIM);
+        cv_icon(COL_X, Y_LABEL - COL_Y + 2, icon, C_GRAY);   /* icon rows = the label's cap height */
+    cv_text(COL_X + (l[0] && icon != ICON_NONE ? LABEL_X : 0), Y_LABEL - COL_Y, &FONT_S, l, C_GRAY);
+    x = cv_text(COL_X, Y_VALUE - COL_Y, vf, v, vc);
+    cv_text(x + 2, Y_VALUE - COL_Y, &FONT_S, u, C_DIM);
     if (ratio >= 0) {                                   /* gauge: track, fill, 1 px end line */
-        int32_t gy = Y_GAUGE - Y_LABEL;
-        fx = ratio * gw / 1000;
-        cv_rect(0, gy + 1, gw, 1, C_LINE);
-        cv_rect(0, gy, fx, 3, C_DIM);
-        cv_rect(fx, gy - 1, 1, 5, vc == C_WHITE ? C_WHITE : C_HI);
+        int32_t gy = Y_GAUGE - COL_Y - 2;
+        fx = ratio * (gw - 1) / 1000;
+        cv_rect(COL_X, gy, gw, 3, C_RAISE);
+        cv_rect(COL_X, gy, fx, 3, C_DIM);
+        cv_rect(COL_X + fx, gy - 1, 1, 5, vc == C_WHITE ? C_WHITE : C_HI);
     }
-    cv_blit(c * 60u + 4u, Y_LABEL);
+    cv_blit(c * 60u, COL_Y);
 }
 
 /* Matches voice.c: attack is linear, decay and release are exponential
@@ -395,8 +406,8 @@ static void graph_browse(void)
             str_cpy(nm, ENGINES[e]->presets[k].name, sizeof nm);
         }
         if (sel)
-            cv_rect(4, y + 6, 3, 3, C_WHITE);
-        cv_text(14, y, &FONT_S, tag, sel ? C_GRAY : C_DIM);
+            cv_rrect(6, y - 1, 228, 17, 4, C_SEL, C_SURF);
+        cv_text(14, y, &FONT_S, tag, sel ? C_HI : C_DIM);
         cv_text(54, y, &FONT_S, nm, sel ? C_WHITE : C_GRAY);
     }
 }
@@ -416,9 +427,9 @@ static void graph_user(void)
         else
             str_cpy(nm, "EMPTY", sizeof nm);
         if (sel)
-            cv_rect(4, y + 6, 3, 3, C_WHITE);
+            cv_rrect(6, y - 1, 228, 17, 4, C_SEL, C_SURF);
         cv_text(14, y, &FONT_S, tag, sel ? C_WHITE : C_GRAY);
-        cv_text(54, y, &FONT_S, nm, used ? (sel ? C_WHITE : C_HI) : C_DIM);
+        cv_text(54, y, &FONT_S, nm, used ? (sel ? C_WHITE : C_HI) : sel ? C_GRAY : C_DIM);
     }
 }
 
@@ -433,9 +444,10 @@ static void graph_slots(void)
         b[0] = (char)('1' + i);
         b[1] = 0;
         if (sel)
-            cv_rect(4, y + 6, 3, 3, C_WHITE);
+            cv_rrect(6, y - 2, 228, 20, 4, C_SEL, C_SURF);
         cv_text(14, y, &FONT_S, b, sel ? C_WHITE : C_GRAY);
-        cv_text(40, y, &FONT_S, project_used(i) ? "USED" : "EMPTY", project_used(i) ? (sel ? C_WHITE : C_HI) : C_DIM);
+        cv_text(40, y, &FONT_S, project_used(i) ? "USED" : "EMPTY",
+                project_used(i) ? (sel ? C_WHITE : C_HI) : sel ? C_GRAY : C_DIM);
     }
 }
 
@@ -488,7 +500,7 @@ static void draw_tracks(void)
 {
     uint32_t c;
     if (ui.force) {
-        lcd_fill(0, Y_GRAPH, 240, H_GRAPH, C_BLACK);
+        lcd_fill(0, Y_GRAPH, 240, H_GRAPH, C_BG);
         for (c = 0; c < NTRK; c++)
             ts.meter[c] = 0;
     }
@@ -512,7 +524,7 @@ static void draw_tracks(void)
             ts.head[c] = sig;
             b[0] = (char)('1' + c);
             b[1] = 0;
-            cv_begin(54, 16, C_BLACK);
+            cv_begin(54, 16, C_BG);
             cv_text(0, 0, &FONT_S, b, sel ? C_WHITE : C_GRAY);
             if (sel)
                 cv_rect(0, 15, 8, 1, C_WHITE);
@@ -531,7 +543,7 @@ static void draw_tracks(void)
         sig = str_hash(2u + sel, b);
         if (ui.force || sig != ts.name[c]) {
             ts.name[c] = sig;
-            cv_begin(54, 16, C_BLACK);
+            cv_begin(54, 16, C_BG);
             cv_text(0, 0, &FONT_S, b, sel ? C_HI : C_DIM);
             cv_blit(x0, TS_NAME_Y);
         }
@@ -545,7 +557,7 @@ static void draw_tracks(void)
         if (ui.force || sig != ts.fader[c]) {
             int32_t fy = (int32_t)(TS_H - 2u) - (int32_t)lvl * (TS_H - 4) / 127;
             ts.fader[c] = sig;
-            cv_begin(12, TS_H, C_BLACK);
+            cv_begin(12, TS_H, C_BG);
             cv_rect(3, 0, 1, TS_H, C_LINE);
             if (lvl) {
                 cv_rect(2, fy, 3, TS_H - fy, C_DIM);
@@ -562,7 +574,7 @@ static void draw_tracks(void)
         if (ui.force || sig != ts.ov[c]) {
             uint32_t i;
             ts.ov[c] = sig;
-            cv_begin(34, TS_H, C_BLACK);
+            cv_begin(34, TS_H, C_BG);
             cv_rect(17, 0, 1, TS_H, C_LINE);
             for (i = 0; i < len; i++) {
                 const step_t *s = &t->step[i];
@@ -587,7 +599,7 @@ static void draw_tracks(void)
         if (ui.force || sig != ts.mark[c]) {
             int32_t i;
             ts.mark[c] = sig;
-            cv_begin(5, TS_H, C_BLACK);
+            cv_begin(5, TS_H, C_BG);
             if (row != 0xFFFFu)
                 for (i = -2; i <= 2; i++) {
                     int32_t w = 5 - 2 * (i < 0 ? -i : i);
@@ -630,7 +642,8 @@ static void draw_graph(void)
     const page_t *pg = cur_page();
     const track_t *t = TSEL;
     uint16_t c = ACC;
-    uint32_t sig, top, drum_note = !ui.home && is_drum(t) && !page_for_drum(pg);
+    uint32_t sig, top, drum_note = !ui.home && is_drum(t) && !page_for_drum(pg), card;
+    uint16_t under;
     if (!ui.home && pg->graph == GR_TRK) {
         draw_tracks();
         ui.graph_top = 1;                            /* the next graph draws its top rows again */
@@ -640,7 +653,12 @@ static void draw_graph(void)
     if (!ui.force && sig == ui.graph_sig)
         return;
     ui.graph_sig = sig;
-    cv_begin(240, H_GRAPH, C_BLACK);
+    cv_begin(240, H_GRAPH, C_BG);
+    card = ui.home || drum_note || (pg->graph != GR_NONE && pg->graph != GR_ARP);   /* (ARP: no graph) */
+    under = card ? C_SURF : C_BG;
+    if (card)                                        /* the graph's card (rows Y_GRAPH .. + 122) */
+        cv_card(2, 0, 236, H_GRAPH - 1);
+    cv_clip(4, 2, 236, H_GRAPH - 3);
     cv_oy = G_OY;
     if (ui.home) {
         graph_scope(c);
@@ -692,11 +710,12 @@ static void draw_graph(void)
     if (ui.hot_t && settings.zoom) {                 /* focus (menu ZOOM): the touched value, large and white */
         int32_t x;
         top = 1;
-        cv_rect(0, 0, 150, 50, C_BLACK);
-        cv_text(4, 0, &FONT_S, ui.focus_l, C_GRAY);
-        x = cv_text(4, 16, &FONT_L, ui.focus_v, C_WHITE);
-        cv_text(x + 4, 30, &FONT_S, ui.focus_u, C_DIM);
+        cv_rrect(6, 4, 146, 50, 5, C_RAISE, under);
+        cv_text(12, 5, &FONT_S, ui.focus_l, C_GRAY);
+        x = cv_text(12, 20, &FONT_L, ui.focus_v, C_WHITE);
+        cv_text(x + 4, 34, &FONT_S, ui.focus_u, C_GRAY);
     }
+    cv_noclip();
     /* graphs keep out of the top G_OY rows: skip them unless something is (or was) there */
     cv_blit_from(0, Y_GRAPH, top || ui.graph_top || ui.force ? 0u : G_OY);
     ui.graph_top = (uint8_t)top;
@@ -750,7 +769,7 @@ static void draw_foot(void)
     if (!ui.force && sig == ui.foot_sig)
         return;
     ui.foot_sig = sig;
-    cv_begin(240, H_FOOT, C_BLACK);
+    cv_begin(240, H_FOOT, C_BG);
     {
         uint32_t i;
         for (i = 0; i < 16u; i++) {                   /* row 1: the cursor's bank as 16 thin bars */
@@ -922,12 +941,16 @@ static void ui_draw(void)
         return;
     if (ui.confirm) {                                   /* clear-the-sequence dialog */
         if (ui.force) {
-            lcd_fill(0, 0, 240, 240, C_BLACK);
             char b[16] = "CLEAR TRACK 1?", s[20] = "CLEAR T1 SEQUENCE?";   /* the header (T1..T4) is hidden */
+            const char *q = ui.confirm == 2 ? b : s, *h = "OCT- NO    OCT+ YES";
             b[12] = (char)('1' + ui.confirm_trk);
             s[7] = b[12];
-            draw_text_box(0, 84, 240, &FONT_S, ui.confirm == 2 ? b : s, C_WHITE, 1);
-            draw_text_box(0, 132, 240, &FONT_S, "OCT- NO    OCT+ YES", C_GRAY, 1);
+            lcd_fill(0, 0, 240, 240, C_BG);
+            cv_begin(240, 100, C_BG);                   /* a dialog card */
+            cv_card(12, 0, 216, 100);
+            cv_text((240 - text_w(&FONT_M, q)) / 2, 26, &FONT_M, q, C_WHITE);
+            cv_text((240 - text_w(&FONT_S, h)) / 2, 58, &FONT_S, h, C_GRAY);
+            cv_blit(0, 70);
             ui.force = 0;
         }
         return;
