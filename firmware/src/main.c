@@ -134,6 +134,9 @@ static void fm1_main(void)
         settings_save();
     }
     fm1_delay_ms(400);
+#if FELUCCA_FLASH
+    autosave_resume();                        /* Jangada: the project as it was left (project.c) */
+#endif
     lcd_fill(0, 0, 240, 240, C_BLACK);
 
     for (;;) {
@@ -217,6 +220,9 @@ static void fm1_main(void)
         felucca_dbg.stage = 2;
         ui_leds();
         ui_draw();
+#if FELUCCA_FLASH
+        autosave_tick();                                /* Jangada: the working project into flash, when quiet */
+#endif
         felucca_dbg.stage = 9;
         while (fm1_ms - m < 15u) {                               /* ~60 UI frames/s at most */
             ui_input();

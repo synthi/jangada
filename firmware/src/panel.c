@@ -52,9 +52,13 @@ static uint32_t panel_btn_of(uint32_t matrix_id)        /* label of a matrix but
 static void panel_led(uint32_t label, int on) { fm1_led_key(panel.btn[label], on); }
 
 /* steps of a role, + = clockwise */
+static uint32_t ui_input_ms;                    /* Jangada: the last button, key or knob turn (the autosave waits) */
 static int32_t panel_enc(uint32_t role)
 {
-    return fm1_enc_take(panel.enc[role]) * panel.dir[role];
+    int32_t s = fm1_enc_take(panel.enc[role]) * panel.dir[role];
+    if (s)
+        ui_input_ms = fm1_ms;                      /* a knob turning is not idle either */
+    return s;
 }
 
 /* user settings that survive a reset */

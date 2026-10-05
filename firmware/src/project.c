@@ -301,9 +301,9 @@ static void proj_fetch(uint32_t slot)
 }
 #endif
 
-static void project_save(uint32_t slot)
+/* the working project -> p (also the autosave) */
+static void proj_capture(project_t *p)
 {
-    project_t *p = &proj_slot[slot & 3u];
     uint32_t i;
     memset(p, 0, sizeof *p);
     p->magic = PROJ_MAGIC;
@@ -321,6 +321,12 @@ static void project_save(uint32_t slot)
     }
     fm1_irq_on();
     p->sum = proj_sum(p);
+}
+
+static void project_save(uint32_t slot)
+{
+    project_t *p = &proj_slot[slot & 3u];
+    proj_capture(p);
 #if FELUCCA_FLASH
     if (flash_ok) {
         uint32_t n = proj_to_jng(p, proj_io);           /* stored keyed: "JNG1" */
@@ -331,10 +337,11 @@ static void project_save(uint32_t slot)
     ui_message("SAVED (RAM)");
 }
 
+static void proj_apply(const project_t *p);
+
 static void project_load(uint32_t slot)
 {
     project_t *p = &proj_slot[slot & 3u];
-    uint32_t i, k;
 #if FELUCCA_FLASH
     if (flash_ok && !proj_ok(p))
         proj_fetch(slot);
@@ -343,6 +350,15 @@ static void project_load(uint32_t slot)
         ui_message("EMPTY SLOT");
         return;
     }
+    proj_apply(p);
+    ui_message("LOADED");
+}
+
+/* a project into the working one: the transport stops, everything sounding is released, every value
+ * back inside its range */
+static void proj_apply(const project_t *p)
+{
+    uint32_t i, k;
     transport_req = 2;
     panic_req = (1u << NTRK) - 1u;
     fm1_irq_off();                                      /* the audio ISR must not see half a project */
@@ -387,8 +403,63 @@ static void project_load(uint32_t slot)
         }
     sync_reload = 1;
     ui.force = 1;
-    ui_message("LOADED");
 }
+
+#if FELUCCA_FLASH
+/* Jangada (after SLOOP): the working project, kept in flash by itself: saved when it changed, the
+ * transport is stopped, nothing sounds and the panel was not touched for AUTOSAVE_IDLE (a flash erase
+ * stops the audio for ~50 ms: never while something plays); loaded at power-on (autosave_resume) */
+#define AUTOSAVE_IDLE 2500u                    /* ms without input */
+#define AUTOSAVE_GAP 20000u                    /* ms between two saves at least */
+static project_t autosave_buf;
+static uint32_t autosave_sum, autosave_ms, autosave_checked;
+
+static int audio_quiet(void)                   /* no voice of any track, no drum */
+{
+    uint32_t i, k;
+    for (i = 0; i < NTRK; i++)
+        for (k = 0; k < NVOICE; k++)
+            if (trk[i].v[k].active)
+                return 0;
+    for (k = 0; k < NDRUM; k++)
+        if (drums.v[k].active)
+            return 0;
+    return 1;
+}
+
+static void autosave_tick(void)                /* main loop */
+{
+    uint32_t now = fm1_ms, n;
+    if (!flash_ok || song.playing || ui.menu || now - ui_input_ms < AUTOSAVE_IDLE ||
+        now - autosave_ms < AUTOSAVE_GAP || now - autosave_checked < 1000u)
+        return;
+    autosave_checked = now;
+    proj_capture(&autosave_buf);
+    if (autosave_buf.sum == autosave_sum || !audio_quiet())
+        return;
+    n = proj_to_jng(&autosave_buf, proj_io);
+    if (st_save(OBJ_AUTOSAVE, proj_io, n) == 0) {
+        autosave_sum = autosave_buf.sum;
+        autosave_ms = now;
+    }
+}
+
+/* power-on: the project as it was left. Not after a failed boot (a project that crashed it stays
+ * out), nor with OCT+ held alone (a new project) */
+static void autosave_resume(void)
+{
+    int n;
+    if (!flash_ok || bootguard.failed || (fm1_in.buttons & 3u) == 2u) {
+        autosave_sum = 0;
+        return;
+    }
+    n = st_load(OBJ_AUTOSAVE, proj_io, sizeof proj_io);
+    if (n <= 0 || !proj_import(&autosave_buf, proj_io, n) || !proj_ok(&autosave_buf))
+        return;
+    proj_apply(&autosave_buf);
+    autosave_sum = autosave_buf.sum;
+}
+#endif
 
 /* settings + learned panel table: one flash object. The flash copy wins at
  * boot (the .noinit copies are garbage after a power-off). */

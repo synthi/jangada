@@ -309,6 +309,8 @@ static void ui_input(void)
     int32_t s;
     static int8_t punch_shown = -1;
     t4_follow();
+    if (pressed || notes || fm1_in.buttons || fm1_in.notes)
+        ui_input_ms = fm1_ms;                           /* Jangada: not idle (project.c autosave) */
     layers_input(&pressed, fm1_ms);                     /* Jangada: FX / GLO tap, hold, lock (ui_layers.c) */
     /* Jangada: the punch-in effect's name on screen when one starts (ui_layers.c: the FX layer) */
     if (punch.req != punch_shown) {

@@ -89,7 +89,8 @@ int main(void)
     bad += check("both headers broken -> nothing", st_load(OBJ_PROJECT0 + 2, got, sizeof got) < 0);
     bad += check("data stays in the Felucca regions",
                  st_sector(OBJ_SETTINGS, 1) + 4096 <= 0xFF000 && st_sector(OBJ_PROJECT0 + 3, 1) + 4096 <= 0xE0000 &&
-                     st_sector(OBJ_UPRESET0, 0) >= 0xDC000 && st_sector(OBJ_COUNT - 1, 1) + 4096 <= 0xE0000);
+                     st_sector(OBJ_UPRESET0, 0) >= 0xDC000 && st_sector(OBJ_UPRESET0 + 1, 1) + 4096 <= 0xE0000 &&
+                     st_sector(OBJ_AUTOSAVE, 0) == 0x9F000 && st_sector(OBJ_AUTOSAVE, 1) == 0xFE000);
     printf("%s\n", bad ? "STORAGE TEST FAILED" : "storage test passed");
     return bad != 0;
 }
