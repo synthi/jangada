@@ -5,7 +5,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Felucca</title>
+<title>Jangada</title>
 <style>
   :root { --bg: #fff; --fg: #000; --dim: #777; }
   @media (prefers-color-scheme: dark) {
@@ -29,7 +29,7 @@
 <body>
 <main>
   <button class="lang" id="lang"></button>
-  <h1>Felucca</h1>
+  <h1>Jangada</h1>
   <p data-t="intro"></p>
   <p data-t="warn"></p>
   <p class="small" data-t="direct"></p>
@@ -43,15 +43,39 @@
   <p id="status"></p>
   <pre id="log"></pre>
   <p><a href="../editor/" style="color:inherit" data-t="editor"></a></p>
-  <p class="small">Felucca by Leo Kuroshita (@kurogedelic), <a href="https://hugelton.com" target="_blank" rel="noopener" style="color:inherit">Hügelton Instruments</a>.<br>
+  <p class="small">Jangada, a fork of Felucca by Leo Kuroshita (@kurogedelic), <a href="https://hugelton.com" target="_blank" rel="noopener" style="color:inherit">Hügelton Instruments</a>, with parts of <a href="https://github.com/isod89/sloop-fm1" target="_blank" rel="noopener" style="color:inherit">SLOOP</a> (isod89) and msfa / Dexed (FM6, Apache-2.0).<br>
     Font: Inter Tight (The Inter Project Authors, SIL OFL 1.1). Icons: Fukiai (Hügelton Instruments, MIT). Samples: Versilian Studios VSCO-2 Community Edition and VCSL (CC0 1.0), and the Hügelton Sample Pack (© Hügelton Instruments, not CC0).<br>
     Test build. M-VAVE and FM-1 are trademarks of their respective owners.<br>
-    <span data-t="license"></span> <a href="https://github.com/hugelton/Felucca" target="_blank" rel="noopener" style="color:inherit">github.com/hugelton/Felucca</a></p>
+    <span data-t="license"></span> <a href="https://github.com/zednaked/jangada" target="_blank" rel="noopener" style="color:inherit">github.com/zednaked/jangada</a></p>
 </main>
 <script type="module">
 /*LIB*/
 const $ = (id) => document.getElementById(id);
 const TEXT = {
+  pt: {
+    intro: "Conecte o FM-1 pelo USB. (Funciona no Chrome ou no Edge.)",
+    warn: "Não desconecte o cabo USB durante a gravação.",
+    install: "Instalar",
+    editor: "Editor (depois de instalar: edite sons e sequências pelo computador)",
+    direct: "Ligue o cabo USB direto no computador (um cabo de dados). Não precisa de Probe nem Transporter.",
+    brick: "Se a instalação falhar: segure OCT− ao ligar o FM-1 (resgate por USB) e instale de novo. Se nem isso ligar, a recuperação precisa de um Transporter:",
+    beta: "Versão alfa, pode ser instável. O autor não se responsabiliza se o seu FM-1 for danificado ou se comportar mal por causa deste firmware alternativo. Use por sua conta e risco.",
+    back: "Para voltar ao firmware oficial: o atualizador da M-VAVE, M-UPGRADE (Downloads → PC Software → M-UPGRADE), e o firmware oficial (PC Firmware → FM-1 V15). No Linux: ./instalar-linux.sh --original.",
+    nomidi: "Este navegador não consegue. Abra a página no Chrome ou no Edge.", loadfail: "Não foi possível carregar: ",
+    start: "Começando", verify: "Conferindo", loader: "Entrando no modo de atualização", write: "Gravando",
+    reboot: "Reiniciando", done: "Pronto", stopped: "Parou. Reconecte o cabo USB e aperte Instalar de novo.",
+    error: "Erro: ",
+    denied: "O acesso ao MIDI (SysEx) não foi permitido. Permita o MIDI nas configurações do site (barra de endereço) e aperte Instalar de novo.",
+    notfound: "FM-1 não encontrado. Confira o cabo USB (de dados), feche outros programas que usam MIDI e aperte Instalar de novo.",
+    model: "O aparelho conectado não é um FM-1.",
+    lost: "A conexão USB caiu. Reconecte e aperte Instalar de novo.",
+    noloader: "O FM-1 em modo de atualização não foi encontrado. Reconecte o cabo USB e aperte Instalar de novo (ele fica nesse modo até terminar).",
+    noreturn: "O FM-1 não voltou. Desligue e ligue de novo.",
+    mismatch: "Gravado, mas o FM-1 informa outra versão: ",
+    badpkg: "O arquivo de instalação está danificado. Recarregue a página.",
+    leave: "Gravando. Não feche a página.",
+    license: "GPL-3.0, sem garantia. Código-fonte:",
+  },
   ja: {
     intro: "FM-1 を USB で接続してください。（Chrome か Edge で使えます）",
     warn: "書き込み中は USB を抜かないでください。",
@@ -82,7 +106,7 @@ const TEXT = {
     install: "Install", other: "日本語",
     editor: "Editor (after installing: edit sounds and sequences from the computer)",
     direct: "Connect the USB cable directly to the computer. No probe or Transporter is needed.",
-    brick: "If an install fails and the FM-1 no longer starts, recovering it needs a Transporter:",
+    brick: "If an install fails: hold OCT− while switching the FM-1 on (USB rescue) and install again. If even that does not start, recovering it needs a Transporter:",
     beta: "This is a beta and may be unstable. The author accepts no responsibility if your FM-1 is damaged or misbehaves because of this custom firmware. Use it at your own risk.",
     back: "To go back to the official firmware you need M-VAVE's official updater, M-UPGRADE (Downloads → PC Software → M-UPGRADE), and the official firmware (PC Firmware → FM-1 V15).",
     nomidi: "This browser cannot do it. Open the page in Chrome or Edge.", loadfail: "Could not load: ",
@@ -101,16 +125,19 @@ const TEXT = {
     license: "GPL-3.0, no warranty. Source:",
   },
 };
-let lang = (navigator.language || "en").toLowerCase().startsWith("ja") ? "ja" : "en";
+const LANGS = ["pt", "en", "ja"], LANG_NAME = { pt: "Português", en: "English", ja: "日本語" };
+const nav = (navigator.language || "en").toLowerCase();
+let lang = nav.startsWith("pt") ? "pt" : nav.startsWith("ja") ? "ja" : "en";
+const nextLang = () => LANGS[(LANGS.indexOf(lang) + 1) % LANGS.length];
 const t = (k) => TEXT[lang][k];
 let lastKey = null, lastArg = "";
 function applyLang() {
   document.documentElement.lang = lang;
   document.querySelectorAll("[data-t]").forEach((e) => { e.textContent = t(e.dataset.t); });
-  $("lang").textContent = t("other");
+  $("lang").textContent = LANG_NAME[nextLang()];
   if (lastKey) $("status").textContent = t(lastKey) + lastArg;
 }
-$("lang").addEventListener("click", () => { lang = lang === "ja" ? "en" : "ja"; applyLang(); });
+$("lang").addEventListener("click", () => { lang = nextLang(); applyLang(); });
 applyLang();
 const sayK = (k, arg = "") => { lastKey = k; lastArg = arg; $("status").textContent = t(k) + arg; };
 const say = (txt) => { lastKey = null; $("status").textContent = txt; };
@@ -129,7 +156,7 @@ window.addEventListener("beforeunload", (e) => { if (writing) { e.preventDefault
     const pkg = new Uint8Array(await r.arrayBuffer());
     if (productOf(pkg) !== meta.product) { sayK("badpkg"); return; }
     image = logicalImage(pkg);
-    say(`Felucca ${meta.version}`);
+    say(`Jangada ${meta.version}`);
     $("go").disabled = false;
   } catch (e) { sayK("loadfail", e.message); }
 })();

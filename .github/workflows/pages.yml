@@ -1,0 +1,35 @@
+# Jangada site (GitHub Pages): the web installer and the web editor, with the newest released package.
+# Runs after a release (release.yml starts it) or by hand (Actions > pages > Run workflow).
+name: pages
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: The newest release's package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="$(gh release list --limit 1 --json tagName -q '.[0].tagName')"
+          gh release download "$tag" --pattern 'jangada-*.fwsc' --dir dl
+          python3 web/make_site.py dl/jangada-*.fwsc "${tag#v}" site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4

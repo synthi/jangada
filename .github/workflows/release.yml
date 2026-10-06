@@ -6,6 +6,7 @@ on:
 
 permissions:
   contents: write
+  actions: write                         # starts pages.yml (the web installer with the new package)
 
 jobs:
   release:
@@ -46,3 +47,7 @@ jobs:
           sha256sum "$f" > "$f.sha256"
           gh release create "$GITHUB_REF_NAME" "$f" "$f.sha256" --prerelease --generate-notes \
             --title "Jangada ${GITHUB_REF_NAME#v}"
+      - name: Web installer (pages.yml)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main
