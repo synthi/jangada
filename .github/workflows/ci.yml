@@ -21,6 +21,9 @@ jobs:
         with:
           node-version: "22"
       - run: pip install Pillow fonttools
+      - uses: mlugg/setup-zig@v2           # the Studio test (web/test_studio.mjs): wasm32 by zig cc
+        with:
+          version: 0.14.1
 
       - name: JieLi toolchain and SDK files (cached)
         uses: actions/cache@v4
