@@ -53,12 +53,12 @@ _Static_assert(sizeof rev_comb / 2u >= SP_LEN && sizeof rev_u.sp / 4u >= 4u * (S
 static const uint16_t PL_LINE[4] = {1109, 1193, 1277, 1327};   /* coprime */
 _Static_assert(1109 + PL_MOD + 2 + 1193 + 1277 + 1327 <= sizeof rev_comb / 2u, "PLATE in ROOM's buffers");
 
-/* DIST: low cut -> drive (1x..8x, exponential) -> asymmetric soft clip
+/* DIST SOFT (P_DTYPE 0; the others: grit.c): low cut -> drive (1x..8x, exponential) -> asymmetric soft clip
  * (a little bias = even harmonics) -> tone low-pass that closes with drive ->
  * make-up gain. State per part (track_t dist_*). */
-static void track_dist(track_t *t, int32_t *b, uint32_t n)
+static void dist_soft(track_t *t, int32_t *b, uint32_t n, int32_t d)
 {
-    int32_t d = t->p[P_DIST], i, g, k, mk, bias = 2400, b0;
+    int32_t i, g, k, mk, bias = 2400, b0;
     if (!d)
         return;                                         /* states kept: switching on does not click */
     g = 4096 + d * d * 2;                                /* Q12: 1x .. ~9x, gentle at first */
@@ -74,6 +74,26 @@ static void track_dist(track_t *t, int32_t *b, uint32_t n)
         t->dist_lp2 += mulq15(t->dist_lp1 - t->dist_lp2, k);
         b[i] = mulq15(t->dist_lp2, mk);
     }
+}
+
+#include "grit.c"             /* Jangada GRIT: the other DIST types, TAPE and HUM on the master */
+
+/* the DIST insert of a track: SOFT (above, the default) or a GRIT type (P_DTYPE) */
+static void track_dist(track_t *t, int32_t *b, uint32_t n)
+{
+    int32_t d = t->p[P_DIST];
+    uint32_t mode = d ? 1u + (uint32_t)clamp(t->p[P_DTYPE], DT_SOFT, DT_RING) : 0u, old = t->dist_mode;
+    if (mode != old) {
+        t->dist_mode = (uint8_t)mode;
+        if (old > 1u || mode > 1u) {                    /* a GRIT type comes or goes: a crossfade */
+            dist_xfade(t, b, n, old, mode, d);
+            return;
+        }
+    }
+    if (mode == 1u)
+        dist_soft(t, b, n, d);
+    else if (mode)
+        dist_grit(t, b, n, mode - 1u, d);
 }
 
 /* master: peak limiter in front of the soft clipper. Fast attack (~0.1 ms),
@@ -464,8 +484,8 @@ static void mix_part(track_t *t, uint32_t n)
 }
 
 /* ---- Jangada: the master bus, after SLOOP (isod89/sloop-fm1, GPL-3.0): DUST, the DJ filter and the
- * punch-in effects run on the whole mix, in that order, before the volume. All three are off (and the
- * mix bit-identical) until used. */
+ * punch-in effects run on the whole mix, before the volume (Jangada GRIT: HUM and TAPE after DUST,
+ * grit.c). All are off (and the mix bit-identical) until used. */
 /* ---- DUST: the master through an old sampler and a record. G_DUST 0..127 turns up together: drive
  * into a soft clip, a lower sample rate (held samples, 44.1 -> 11 kHz), fewer bits (15 -> 8), a
  * one-pole low-pass (open -> ~3 kHz), a little hiss and crackle. The hiss and the crackle are the
@@ -616,6 +636,8 @@ static void mix_block(int32_t *out, uint32_t n)
         mix_r[i] += wet_r[i];
     }
     dust_process(mix_l, mix_r, n);
+    hum_process(mix_l, mix_r, n);                       /* Jangada GRIT: the hum under it, all onto the tape */
+    tape_process(mix_l, mix_r, n);
     punch_process(mix_l, mix_r, n);
     djf_process(mix_l, mix_r, n);
     for (i = 0; i < n; i++) {

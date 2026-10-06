@@ -25,6 +25,8 @@ static const char *const N_SYNC[] = {"OFF", "OUT"};    /* Jangada: OUT = send MI
 static const char *const N_CHORD[] = {"OFF", "TRIAD", "7TH", "9TH", "SUS4", "POWER"};   /* seq.c CHORD_DEG (Jangada) */
 static const char *const N_KIT[] = {"GM", DS_KIT_NAME_LIST};   /* drums.c DRUM_KIT_NAMES (Jangada) */
 static const char *const N_RTYPE[] = {"ROOM", "SPRING", "PLATE"};   /* fx.c (Jangada) */
+/* Jangada GRIT: the DIST types (fx.c track_dist); SOFT first: older projects and presets keep their sound */
+static const char *const N_DTYPE[] = {"SOFT", "FUZZ", "FOLD", "CRUSH", "RING"};
 static const char *const N_NOTE[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
 static const char *const N_DASH[] = {"--"};
 static const char *const N_GO[] = {"--", "GO"};
@@ -95,6 +97,9 @@ static const param_desc_t TP[P_COUNT] = {
     [P_M3SRC] = PE("SRC", N_MSRC, 0), [P_M3DST] = PE("DST", N_MDST, 0), [P_M3AMT] = PD("AMT", F_BIPCT, -64, 63, 0),
     [P_M4SRC] = PE("SRC", N_MSRC, 0), [P_M4DST] = PE("DST", N_MDST, 0), [P_M4AMT] = PD("AMT", F_BIPCT, -64, 63, 0),
     [P_CHORD] = PE("CHRD", N_CHORD, 0),
+    /* Jangada GRIT: the DIST type and the RING carrier (30 Hz .. 16 kHz, CUTOFF_HZ; 48 = 320 Hz) */
+    [P_DTYPE] = PE("TYPE", N_DTYPE, 0),
+    [P_DRING] = PD("FREQ", F_CUTOFF, 0, 127, 48),
 };
 
 static const param_desc_t GP[G_COUNT] = {
@@ -131,6 +136,9 @@ static const param_desc_t GP[G_COUNT] = {
     [G_FILT] = PD("FILT", F_BIPCT, -64, 63, 0),
     [G_KIT] = PE("KIT", N_KIT, 0),                     /* Jangada: the drum track's kit */
     [G_RTYPE] = PE("TYPE", N_RTYPE, 0),                /* Jangada: the reverb model */
+    /* Jangada GRIT: the master's worn tape and the hum of an analog recording (fx.c) */
+    [G_TAPE] = PD("TAPE", F_PCT, 0, 127, 0),
+    [G_HUM] = PD("HUM", F_PCT, 0, 127, 0),
 };
 
 static const param_desc_t *track_desc(const track_t *t, uint32_t id)
@@ -142,6 +150,11 @@ static const param_desc_t *track_desc(const track_t *t, uint32_t id)
     }
     if (id == P_M1DST || id == P_M2DST || id == P_M3DST || id == P_M4DST)
         return mod_dst_desc(ENGINES[t->eng_req % NENGINES]);
+    if (id == P_DIST && t->p[P_DTYPE] > 0) {           /* Jangada GRIT: DIST is named by its type (FX page) */
+        static const param_desc_t DIST_AS[4] = {PD("FUZZ", F_PCT, 0, 127, 0), PD("FOLD", F_PCT, 0, 127, 0),
+                                                PD("CRUSH", F_PCT, 0, 127, 0), PD("RING", F_PCT, 0, 127, 0)};
+        return &DIST_AS[(t->p[P_DTYPE] - 1) & 3];
+    }
     return &TP[id];
 }
 
@@ -275,6 +288,7 @@ static const page_t PAGES[] = {
     {"MOD 3", FAM_LFO, SC_TRACK, GR_NONE, {P_M3SRC, P_M3DST, P_M3AMT, 0xFF}},
     {"MOD 4", FAM_LFO, SC_TRACK, GR_NONE, {P_M4SRC, P_M4DST, P_M4AMT, 0xFF}},
     {"FX", FAM_FX, SC_TRACK, GR_FX, {P_DIST, P_CHOR, P_DLY, P_REV}},
+    {"DIST", FAM_FX, SC_TRACK, GR_NONE, {P_DTYPE, P_DIST, P_DRING, 0xFF}},   /* Jangada GRIT: TYPE, DIST, FREQ (RING) */
     {"SLICER", FAM_FX, SC_TRACK, GR_SLCR, {P_SLCR, P_SLPAT, P_SLRATE, P_SLDEPTH}},   /* drum track too */
     {"DLY", FAM_FX, SC_GLOBAL, GR_NONE, {G_DTIME, G_DFDBK, G_DCOLOR, G_DMIX}},
     {"REV/CHO", FAM_FX, SC_GLOBAL, GR_NONE, {G_RSIZE, G_RDAMP, G_CRATE, G_CDEPTH}},
@@ -290,7 +304,8 @@ static const page_t PAGES[] = {
     {"GLOBAL", FAM_GLO, SC_GLOBAL, GR_NONE, {G_BPM, G_SWING, G_CLOCK, G_TUNE}},
     {"SYSTEM", FAM_GLO, SC_GLOBAL, GR_NONE, {G_MIDI, G_SYNC, G_ROUTE, G_INFO}},
     {"DRUMS", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DRCH, G_DRLVL, G_DRREV, G_T4}},   /* GM kit on MIDI ch 10; T4: Jangada */
-    {"MASTER", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DUST, G_DUCK, G_FILT, 0xFF}},
+    {"MASTER", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DUST, G_DUCK, G_FILT, G_TAPE}},
+    {"MASTER 2", FAM_GLO, SC_GLOBAL, GR_NONE, {G_HUM, G_TAPE, G_DUST, 0xFF}},   /* Jangada GRIT: the noise of the past */
     {"KIT", FAM_GLO, SC_GLOBAL, GR_NONE, {G_KIT, G_DRLVL, G_DRREV, 0xFF}},   /* Jangada: the drum kit */    /* Jangada: the master bus (fx.c) */
     {"PRESETS", FAM_SAVE, SC_GLOBAL, GR_BROWSE, {0xFF, 0xFF, 0xFF, 0xFF}},   /* browser: PRESETS knob / KNOB 1 */
     {"USER", FAM_SAVE, SC_GLOBAL, GR_USER, {0xFF, 0xFF, 0xFF, 0xFF}},       /* user presets: SLOT LOAD ERASE SAVE */
