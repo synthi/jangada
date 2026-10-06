@@ -73,6 +73,8 @@ $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/midi_test" tests/midi_test.c -lm
 run "MIDI: bend, sustain, CCs, clock in / out (Jangada)" "$OUT/midi_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/reverb_test" tests/reverb_test.c -lm
 run "reverbs: ROOM, SPRING, PLATE (Jangada)" "$OUT/reverb_test"
+$CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/grit_test" tests/grit_test.c -lm
+run "GRIT: TAPE, HUM, DIST FUZZ / FOLD / CRUSH / RING (Jangada)" "$OUT/grit_test"
 $CC -O1 -w -Ibuild/gen -Ifirmware/src -o "$OUT/layers_test" tests/layers_test.c -lm
 run "layers: SEQ steps and tools, undo, ENGINE, screens (Jangada)" "$OUT/layers_test"
 $CC -O2 -w -Ibuild/gen -Ifirmware/src -o "$OUT/kit_test" tests/kit_test.c -lm

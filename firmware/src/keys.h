@@ -30,6 +30,8 @@ static const uint8_t P_KEY[P_COUNT] = {
     [P_M3SRC] = 71, [P_M3DST] = 72, [P_M3AMT] = 73, [P_M4SRC] = 74, [P_M4DST] = 75, [P_M4AMT] = 76,
     /* Jangada 0.2 */
     [P_CHORD] = 77,
+    /* Jangada GRIT */
+    [P_DTYPE] = 78, [P_DRING] = 79,
 };
 
 /* the P_* index of a key, P_COUNT when this firmware does not know it */

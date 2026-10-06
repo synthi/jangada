@@ -53,6 +53,8 @@ enum {                          /* per-track parameters */
     P_M1SRC, P_M1DST, P_M1AMT, P_M2SRC, P_M2DST, P_M2AMT,
     P_M3SRC, P_M3DST, P_M3AMT, P_M4SRC, P_M4DST, P_M4AMT,
     P_CHORD,                                   /* Jangada (after SLOOP): one key plays a chord of the scale (seq.c) */
+    P_DTYPE, P_DRING,                          /* Jangada GRIT: the DIST type (SOFT FUZZ FOLD CRUSH RING) and the RING
+                                                * carrier (fx.c track_dist) */
     /* the engine's own parameters, NEDIT of them (Felucca had 8). Saved data does not depend
      * on these positions: projects and user presets store stable keys (P_KEY, params.c) */
     P_E0, P_E1, P_E2, P_E3, P_E4, P_E5, P_E6, P_E7,
@@ -76,6 +78,9 @@ enum {                          /* global parameters */
                                  * the kick ducking the synth parts, the DJ filter (< 0 LP, > 0 HP) */
     G_KIT,                      /* Jangada: the drum track's kit: 0 GM (samples), 1.. synthesised (drum_synth.c) */
     G_RTYPE,                    /* Jangada: the reverb model: 0 ROOM, 1 SPRING (Felucca 1.0), 2 PLATE (SLOOP's FDN) */
+    /* Jangada GRIT (fx.c): the master through a worn tape (saturation, wow, flutter, dull highs) and the
+     * hum of an analog recording (60 Hz and its odd harmonics, hiss, a rare crackle) */
+    G_TAPE, G_HUM,
     G_COUNT
 };
 
@@ -222,6 +227,9 @@ typedef struct track {
     /* mix runtime */
     int32_t peak;
     int32_t dist_hp, dist_lp1, dist_lp2;   /* DIST insert state (fx.c) */
+    int32_t dist_x1, dist_x2;    /* Jangada GRIT: the other DIST types' state (FUZZ FOLD CRUSH), */
+    uint32_t dist_ph;            /* the RING carrier's phase, */
+    uint8_t dist_mode;           /* the type the ISR ran last (0 off, 1 + P_DTYPE): a change crossfades */
     uint8_t tail;                /* blocks to mix after the last voice (the DIST tail) */
     int16_t armp, aholdp;        /* P_AMODE / P_AHOLD as last seen by the ISR */
     /* Jangada: MIDI controllers of the track's channel (seq.c midi_cc): pitch bend in 1/16 semitones

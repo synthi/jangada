@@ -3,7 +3,7 @@
  * function button: the 16 white keys and KNOB 1..4 change job while it is held, and after SHOW_MS the
  * screen shows the keys as 16 tiles (4 x 4) and the knobs as dials. Tapped (let go within TAP_MS,
  * nothing touched) the button opens its pages as before.
- *   FX    the 16 punch-in effects (punch.c, run by seq.c keyboard_block)   knobs: FILTER DUST DUCK
+ *   FX    the 16 punch-in effects (punch.c, run by seq.c keyboard_block)   knobs: FILTER DUST DUCK TAPE
  *   GLO   keys 1..4 mute, 5..8 solo, the last white key: tap tempo         knobs: the levels of tracks 1..4
  *   SEQ   the 16 steps of the page (Elektron style): an empty step is set at once with the note played
  *         last, a set one is cleared when its key is let go, unless a knob edited it meanwhile; the
@@ -427,6 +427,8 @@ static void layers_knobs(uint32_t layer)
                 song.g[G_DUST] = (int16_t)clamp(song.g[G_DUST] + accel(EN_K2, s, 127), 0, 127);
             else if (k == 2u)
                 song.g[G_DUCK] = (int16_t)clamp(song.g[G_DUCK] + accel(EN_K3, s, 127), 0, 127);
+            else                                        /* Jangada GRIT: the worn tape */
+                song.g[G_TAPE] = (int16_t)clamp(song.g[G_TAPE] + accel(EN_K4, s, 127), 0, 127);
         } else if (layer == LY_MIX) {
             int16_t *lv = trk_level_p(k);
             *lv = (int16_t)clamp(*lv + accel(EN_K1 + k, s, 127), 0, 127);
@@ -655,7 +657,7 @@ static void layer_screen_draw(void)
             tl[i].fg = on ? C_BLACK : C_AMB;
             tl[i].top = on ? 0 : (i & 4u) ? C_DIM : C_GRAY;   /* rows alternate: easier to count */
         }
-        lab[0] = "FILT", lab[1] = "DUST", lab[2] = "DUCK";
+        lab[0] = "FILT", lab[1] = "DUST", lab[2] = "DUCK", lab[3] = "TAPE";
         {
             int32_t f = song.g[G_FILT];
             if (!f)
@@ -666,10 +668,12 @@ static void layer_screen_draw(void)
             }
             fmt_int(v[1], song.g[G_DUST] * 100 / 127);
             fmt_int(v[2], song.g[G_DUCK] * 100 / 127);
+            fmt_int(v[3], song.g[G_TAPE] * 100 / 127);
         }
         ratio[0] = (song.g[G_FILT] + 64) * 1000 / 127;
         ratio[1] = song.g[G_DUST] * 1000 / 127;
         ratio[2] = song.g[G_DUCK] * 1000 / 127;
+        ratio[3] = song.g[G_TAPE] * 1000 / 127;
     } else if (layer == LY_MIX) {                       /* mute 1..4, solo 1..4, tap */
         static const char *const L[4] = {"T1", "T2", "T3", "T4"};
         sub = "MUTE  SOLO  TAP";
