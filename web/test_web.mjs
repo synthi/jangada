@@ -9,7 +9,9 @@
 //   and the user-sample pipeline byte for byte against tools/sampleio.py; the CHOP helpers (hits, TAP snap,
 //   grid, keep / leave out, own lengths, Fit to slot, the slot, WAV and ZIP writers)
 // - fm1pkg.js: productOf and logicalImage on build/felucca.fwsc (skipped without a build)
-// - fm1ota.js: a full install and an unplug during the write against a simulated FM-1
+// - fm1ota.js: a full install and an unplug during the write against a simulated FM-1; the return to the
+//   official V15 (only the exact file; its loader resumed, another firmware's loader never written)
+// - index_pkg.html: every text in pt / en / ja, the script compiles with the modules inlined
 // - fm1backup.js (Jangada, v5): a complete backup of the editor's mock device and its restore into an
 //   empty one, through the editor's own Link (web/test_backup.mjs checks the module alone)
 
@@ -18,8 +20,8 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import vm from "node:vm";
-import { logicalImage, productOf } from "./fm1pkg.js";
-import { Updater, pack7, unpack7 } from "./fm1ota.js";
+import { logicalImage, productOf, validateStockPackage, sha256hex, STOCK_V15_SHA256, STOCK_V15_SIZE, STOCK_V15_PRODUCT } from "./fm1pkg.js";
+import { Updater, OUR_LOADER, pack7, unpack7 } from "./fm1ota.js";
 import * as BK from "./fm1backup.js";
 
 let failed = 0;
@@ -653,8 +655,9 @@ const UPGRADE = [0xF0, 0x22, 0x24, 0x35, 0x7F, 0xF7];
 
 /* an FM-1 on WebMIDI: identity, then "device asks, host answers" reads of the image */
 class FakeFM1 {
-  constructor(image, { unplugAfter = Infinity } = {}) {
+  constructor(image, { unplugAfter = Infinity, loaderIdentity = "ota-FM-1_900", finalIdentity = "FM-1_900" } = {}) {
     this.image = image; this.unplugAfter = unplugAfter; this.served = 0; this.bad = 0;
+    this.loaderIdentity = loaderIdentity; this.finalIdentity = finalIdentity;
     this.access = { inputs: new Map(), outputs: new Map() };
     this.boot("FM-1_015", "FM-1");
   }
@@ -690,8 +693,8 @@ class FakeFM1 {
       this.waiting = null;
       this.served++;
       if (this.served >= this.unplugAfter) { this.input.state = this.output.state = "disconnected"; return; }
-      if (addr === 0xE0000000) setTimeout(() => this.boot("ota-FM-1_900", "Felucca Update"), 300);
-      else if (addr === 0xF0000000) setTimeout(() => this.boot("FM-1_900", "Felucca"), 300);
+      if (addr === 0xE0000000) setTimeout(() => this.boot(this.loaderIdentity, "FM-1 Update"), 300);
+      else if (addr === 0xF0000000) setTimeout(() => this.boot(this.finalIdentity, "Jangada"), 300);
       else this.next();
     }
   }
@@ -727,6 +730,61 @@ async function updater() {
   ok(e && e.code === "lost", "fm1ota.js: unplugged in step 1 -> error code 'lost'");
   const e2 = await new Updater({ inputs: new Map(), outputs: new Map() }).install(image, "FM-1_900").then(() => null, (x) => x);
   ok(e2 && e2.code === "notfound", "fm1ota.js: no device -> error code 'notfound'");
+
+  /* the return to the official V15 (Jangada, after Felucca 1.0 / SLOOP 2.3) */
+  ok(OUR_LOADER({ text: "ota-FM-1_900" }) && !OUR_LOADER({ text: "ota-FM-1_015" }), "fm1ota.js: our loader is ota-FM-1_9XX");
+  const foreign = new FakeFM1(image);
+  foreign.boot("ota-FM-1_015", "FM-1 Update");
+  const e3 = await new Updater(foreign.access).resume(image).then(() => null, (x) => x);
+  ok(e3 && e3.code === "foreign" && e3.detail === "ota-FM-1_015" && foreign.served === 0, "fm1ota.js: another firmware's loader is never resumed by Install ('foreign')");
+  const back = new FakeFM1(image, { finalIdentity: "FM-1_015" });
+  back.boot("ota-FM-1_015", "FM-1 Update");
+  const st = [];
+  const r4 = await new Updater(back.access).resume(image, (k) => st.push(k), { product: "FM-1_015" });
+  ok(r4 === true && back.bad === 0 && st.at(-1) === "done", "fm1ota.js: return to official interrupted: its loader resumed, V15 checked when back");
+  const wrong = new FakeFM1(image, { finalIdentity: "FM-1_900" });
+  wrong.boot("ota-FM-1_015", "FM-1 Update");
+  const e5 = await new Updater(wrong.access).resume(image, null, { product: "FM-1_015" }).then(() => null, (x) => x);
+  ok(e5 && e5.code === "mismatch", "fm1ota.js: return to official: another firmware coming back is not 'done'");
+  const e6 = await validateStockPackage(new Uint8Array(STOCK_V15_SIZE)).then(() => null, (x) => x);
+  ok(e6 && /official FM-1 V15/.test(e6.message), "fm1pkg.js: a file of the V15's size that is not it is refused (SHA-256)");
+  /* the official file itself, when it is on this computer (FM1_STOCK=path, or the usual places) */
+  const cand = [process.env.FM1_STOCK, ...Array.from({ length: 7 }, (_, k) => join(HERE, "../".repeat(k + 1), "firmware/FM-1_v15_oficial.fwsc")),
+    join(process.env.HOME || "", ".local/share/jangada/FM-1_V15_oficial.fwsc")].filter((f) => f && existsSync(f));
+  if (!cand.length) { console.log("fm1pkg.js: official V15 file not found: its checks skipped (FM1_STOCK=path)"); return; }
+  const raw = new Uint8Array(readFileSync(cand[0]));
+  const sv = await validateStockPackage(raw);
+  const bent = raw.slice(); bent[123456] ^= 1;
+  const e7 = await validateStockPackage(bent).then(() => null, (x) => x);
+  ok(sv.product === STOCK_V15_PRODUCT && (await sha256hex(raw)) === STOCK_V15_SHA256 && eq(sv.image, logicalImage(raw)) && e7,
+    "fm1pkg.js: the official V15 file is accepted, one byte changed is not");
+  const fm = new FakeFM1(sv.image, { loaderIdentity: "ota-FM-1_015", finalIdentity: "FM-1_015" });
+  fm.boot("FM-1_900", "Jangada");
+  const sst = [];
+  const sgot = await new Updater(fm.access).install(sv.image, sv.product, (k) => sst.push(k));
+  ok(sgot === "FM-1_015" && fm.bad === 0 && sst.at(-1) === "done", "fm1ota.js: Jangada -> official V15 (the official loader, FM-1_015 when back)");
+}
+
+/* ------------------------------------------------------ installer page --- */
+function installerPage() {
+  const page = readFileSync(join(HERE, "index_pkg.html"), "utf8");
+  const tb = page.slice(page.indexOf("const TEXT = {"), page.indexOf("\n};", page.indexOf("const TEXT = {")) + 2);
+  const TEXT = vm.runInNewContext(tb.replace("const TEXT =", "(") + ")");
+  const keys = (l) => new Set(Object.keys(TEXT[l]).filter((k) => k !== "other"));
+  const pt = keys("pt"), en = keys("en"), ja = keys("ja");
+  const used = new Set([...page.matchAll(/data-t="(\w+)"|\bt\("(\w+)"\)|sayK\("(\w+)"/g)].map((x) => x[1] || x[2] || x[3]));
+  const miss = [...used].filter((k) => !pt.has(k) || !en.has(k) || !ja.has(k));
+  const odd = [...pt].filter((k) => !en.has(k) || !ja.has(k)).concat([...en, ...ja].filter((k) => !pt.has(k)));
+  ok(!miss.length && !odd.length, `installer: every text in pt, en and ja (${used.size} used${miss.length ? ", missing " + miss : ""}${odd.length ? ", not in all " + odd : ""})`);
+  const visible = Object.values(TEXT).flatMap((o) => Object.values(o)).join(" ");
+  ok(!/sloop|felucca/i.test(visible) && /Jangada/.test(page.slice(0, page.indexOf("<script"))), "installer: Jangada's name in the texts (no other firmware's)");
+  const strip = (f) => readFileSync(join(HERE, f), "utf8").replace(/^export\s+/gm, "").replace(/^import .*?;\n/gm, "");
+  const script = page.slice(page.indexOf('<script type="module">') + 22, page.lastIndexOf("</script>"))
+    .replace("/*LIB*/", ["fm1pkg.js", "fm1ota.js", "fm1backup.js"].map(strip).join("\n")).replace("/*META*/", "{}");
+  let err = null;
+  try { new vm.SourceTextModule(script); } catch (e) { err = e.message; }
+  if (err && /SourceTextModule/.test(err)) { try { new vm.Script(`(async () => {${script}\n})`); err = null; } catch (e) { err = e.message; } }
+  ok(!err, "installer: the page script compiles (fm1pkg.js, fm1ota.js, fm1backup.js inlined)" + (err ? ` (${err})` : ""));
 }
 
 await editorMock();
@@ -742,5 +800,6 @@ editorIcons();
 samplesMatch();
 await packages();
 await updater();
+installerPage();
 console.log(failed ? `WEB TESTS FAILED (${failed})` : "web tests passed");
 process.exit(failed ? 1 : 0);

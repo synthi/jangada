@@ -5,7 +5,7 @@
 
   index.html                  redirect to the installer
   firmware/jangada-VER.fwsc   the package
-  webapp/installer/index.html index_pkg.html with fm1pkg.js, fm1ota.js and the metadata inlined
+  webapp/installer/index.html index_pkg.html with fm1pkg.js, fm1ota.js, fm1backup.js and the metadata inlined
   webapp/editor/index.html    editor.html (+ fukiai.ttf, FUKIAI-LICENSE.txt, fm1backup.js: the editor imports it)
   src/                        not touched
 
@@ -44,7 +44,8 @@ def main(pkg, version, out):
         raise SystemExit(f"{pkg}: no Felucca update loader in it")
     html = (HERE / "index_pkg.html").read_text(encoding="utf-8")
     lib = strip_module((HERE / "fm1pkg.js").read_text(encoding="utf-8")) + "\n" + \
-        strip_module((HERE / "fm1ota.js").read_text(encoding="utf-8"))
+        strip_module((HERE / "fm1ota.js").read_text(encoding="utf-8")) + "\n" + \
+        strip_module((HERE / "fm1backup.js").read_text(encoding="utf-8"))
     name = f"jangada-{re.sub(r'[^A-Za-z0-9.-]', '-', version)}.fwsc"
     meta = json.dumps({"version": version, "product": product, "pkg": "../../firmware/" + name})
     for mark in ("/*LIB*/", "/*META*/"):
