@@ -239,11 +239,12 @@ sh tests/run_tests.sh         # todos os testes, no PC
 
 ## Próximos passos
 
-1. **Grit no master**: fita (wow, flutter e saturação), fuzz e foldback, ring mod, o zumbido de fundo.
-2. **Kits próprios**: RUST, FORGE, PISTON, HURT e **MANGUE** (alfaia, zabumba, agogô, caixa de
-   maracatu, cuíca), com padrões de maracatu, baião e coco e escalas nordestinas.
-3. **O Studio no navegador**: ouvir e tocar a Jangada no site, sem o FM-1.
-4. **Banco de patches FM6** e importação e exportação de `.syx` do DX7.
+1. ~~Grit no master~~ (feito: TAPE, HUM, FUZZ / FOLD / CRUSH / RING).
+2. ~~Kits próprios~~ (feito: RUST, FORGE, PISTON, HURT, MANGUE; maracatu, baião, coco; escala NORD).
+3. ~~O Studio no navegador~~ (feito: `webapp/studio/` no site).
+4. **Banco de patches FM6**, importação e exportação de `.syx` do DX7, e o Dexed editando a Jangada ao
+   vivo por SysEx.
+5. MIDI mais fino (bend por canal, vibrato no CC1) e o nome do acorde no HOME.
 
 Depois: drones que evoluem, pianos quebrados, paletas RUST, ASH e MANGUE, a jangada na tela de boot.
 

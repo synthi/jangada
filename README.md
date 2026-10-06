@@ -238,11 +238,11 @@ sh tests/run_tests.sh         # every test, on the PC
 
 ## Next
 
-1. **Grit on the master**: tape (wow, flutter, saturation), fuzz and foldback, ring mod, the hum underneath.
-2. **Our own kits**: RUST, FORGE, PISTON, HURT and **MANGUE** (alfaia, zabumba, agogô, maracatu snare,
-   cuíca), with maracatu, baião and coco patterns and northeastern scales.
-3. **The Studio in the browser**: hear and play Jangada on the site, without an FM-1.
-4. **An FM6 patch bank** and DX7 `.syx` import and export.
+1. ~~Grit on the master~~ (done: TAPE, HUM, FUZZ / FOLD / CRUSH / RING).
+2. ~~Our own kits~~ (done: RUST, FORGE, PISTON, HURT, MANGUE; maracatu, baião, coco; NORD scale).
+3. ~~The Studio in the browser~~ (done: `webapp/studio/` on the site).
+4. **An FM6 patch bank**, DX7 `.syx` import and export, and Dexed editing Jangada live over SysEx.
+5. Finer MIDI (per-channel bend range, CC1 vibrato) and the chord name on HOME.
 
 Then: drones that evolve, broken pianos, RUST, ASH and MANGUE palettes, the jangada on the boot screen.
 
