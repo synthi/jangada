@@ -278,6 +278,9 @@ static const preset_t DRAWBAR_PRESETS[] = {
     /* Jangada: drones */
     {"DRONE ORGN", {4, 4, 2, -4, 0, 0, 30, 1}, {90, 64, 127, 110}, 0, 0, FX(25, 30, 30, 100), ARP(7, 9, 1, 127),
      SET({P_AHOLD, 1})},
+    /* Jangada: the Nordeste: the sanfona's reeds, its bellows (the fast rotor), as a drone */
+    {"SANFONA", {10, 0, 0, 2, 0, 10, 30, 2}, {60, 64, 127, 90}, 0, 0, FX(10, 40, 10, 60), ARP(7, 9, 1, 127),
+     SET({P_AHOLD, 1})},
 };
 
 static const engine_t ENG_DRAWBAR = {

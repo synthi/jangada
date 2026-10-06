@@ -195,6 +195,9 @@ static const struct {
      {1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0}},
     {{60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75},       /* 11 SLICES: in order */
      {1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0}},
+    /* Jangada */
+    {{36, 0, 0, 43, 0, 0, 46, 0, 36, 0, 0, 43, 0, 42, 43, 46},             /* 12 BAIAO bass: with the zabumba */
+     {1, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 2, 0, 0}},                     /* (F#: the NORD 4th) */
 };
 #undef T_
 #define NPATTERNS (sizeof PATTERNS / sizeof PATTERNS[0])
@@ -239,6 +242,41 @@ static void load_pat16(track_t *t, const uint8_t *note, const uint8_t *flags)   
     }
     t->p[P_SLEN] = 16;
     pat_sig[trk_index(t)] = seq_sig(t);
+}
+
+/* Jangada: factory beat b (DS_BEATS, drum_synth.c) into the drum track; untouched since, the next kit's
+ * own beat replaces it, as a preset's PAT does on a part */
+static void load_beat(uint32_t b)
+{
+    const dbeat_t *bt = &DS_BEATS[b % DS_NBEATS];
+    track_t *t = TDRUM;
+    uint32_t i, k;
+    for (i = 0; i < NSTEP; i++) {
+        step_t *s = &t->step[i];
+        uint32_t n = 0;
+        for (k = 0; k < 4u; k++)
+            s->note[k] = 0;
+        if (i < 16u)
+            for (k = 0; k < 4u; k++)
+                if (bt->note[i][k])
+                    s->note[n++] = bt->note[i][k];
+        s->n = (uint8_t)n;
+        s->time = n ? ST_NOTE : ST_REST;
+        s->flags = n ? (uint8_t)(bt->flags[i] & SF_STEP) : 0;
+        s->vel = n ? bt->vel[i] : 0;
+    }
+    t->p[P_SLEN] = 16;
+    pat_sig[TRK_DRUM] = seq_sig(t);
+    drums.beat = (int16_t)(b % DS_NBEATS + 1u);
+}
+
+/* Jangada: the drum kit (GLO > KIT, the PRESETS knob on the drum track); an empty or untouched
+ * drum track gets the kit's own beat */
+static void drum_kit_set(uint32_t kit)
+{
+    song.g[G_KIT] = (int16_t)(kit % DRUM_KITS);
+    if (DS_KIT_BEAT[drum_kit()] && is_drum(TDRUM) && seq_replaceable(TDRUM))
+        load_beat(DS_KIT_BEAT[drum_kit()] - 1u);
 }
 
 static void track_defaults_steps(track_t *t)

@@ -27,6 +27,10 @@ static const uint16_t SCALE_MASK[] = {
     (1 << 0) | (1 << 2) | (1 << 4) | (1 << 6) | (1 << 8) | (1 << 10),              /* WHOLE */
     (1 << 0) | (1 << 1) | (1 << 3) | (1 << 4) | (1 << 6) | (1 << 7) | (1 << 9) | (1 << 10), /* DIMHW */
     (1 << 0) | (1 << 2) | (1 << 3) | (1 << 5) | (1 << 6) | (1 << 8) | (1 << 9) | (1 << 11), /* DIMWH */
+    /* Jangada (appended: a saved SCL keeps its scale) */
+    (1 << 0) | (1 << 2) | (1 << 4) | (1 << 6) | (1 << 7) | (1 << 9) | (1 << 10),   /* NORD: the nordestino
+                                     * mode, mixolydian with the raised 4th (lydian b7): the sanfona of the
+                                     * baiao; MIX for the plain baiao, DOR for the minor (xote, toada) */
 };
 
 #define KB_SILENT 255u

@@ -125,7 +125,17 @@ with the sound, the engine, the steps and the playhead, the level and the REC / 
   patches (PTCH F1–F8) and macros on the knobs (ALG FB MLVL MRAT MEG VMOD DTUN). The 4-operator DIGITAL
   stays.
 - **Synthesised drums** (from SLOOP): **GLO → KIT**, or the PRESETS knob on the drum track: the sampled
-  GM kit or 32 synthesised kits (808, 909, TECHNO, INDUSTR, GLITCH, DUBSTEP, JUNGLE…).
+  GM kit or 37 synthesised kits (808, 909, TECHNO, INDUSTR, GLITCH, DUBSTEP, JUNGLE…).
+- **Jangada's own kits**, first in the list: **RUST** (dry industrial: distorted kick, gated snare,
+  crushed hats), **FORGE** (anvil, chains, sheets: ringing metal), **PISTON** (machines: clicks, steam,
+  valves), **HURT** (low, muffled, breathing) and **MANGUE** (alfaia, zabumba and bacalhau, maracatu
+  snare, gonguê, agogô, cuíca, ganzá, triangle, claps, with manguebeat weight).
+- **Factory beats** (**GLO → KIT**, knob 4 **BEAT**): MARACATU (baque virado), BAIAO, COCO, GRIND,
+  ANVIL, ENGINE, FRAGILE. A Jangada kit brings its own beat to an empty drum track; over a pattern of
+  yours, BEAT asks for a second turn.
+- **Nordeste**: the **NORD** scale (SCL; mixolydian with a raised 4th, the northeastern mode: NORD or
+  MIX for baião, DOR for xote and toada), and the **BAIAO BASS** and **RABECA** (ANALOG) and
+  **SANFONA** (WHEEL) presets, the last two as drones.
 - **Reverbs** (**FX → REVERB**, TYPE): ROOM (as before), SPRING (from Felucca 1.0) and PLATE (a stereo
   feedback delay network, from SLOOP).
 

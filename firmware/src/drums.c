@@ -13,10 +13,25 @@ static const char *const DRUM_KIT_NAMES[DRUM_KITS] = {"GM", DS_KIT_NAME_LIST};
 static const char *const DRUM_KIT_STYLES[DRUM_KITS] = {"GM KIT", DS_KIT_STYLE_LIST};
 static uint32_t drum_kit(void) { return (uint32_t)clamp(song.g[G_KIT], 0, DRUM_KITS - 1); }
 
+/* Jangada: the kits in the browser's order (DS_KIT_NAV: GM, then Jangada's own, then SLOOP's);
+ * G_KIT stays the index it always was, so a saved project keeps its kit. The kit d places away
+ * from kit (wrap: around the ends, else it stops there) */
+static uint32_t drum_kit_step(uint32_t kit, int32_t d, int wrap)
+{
+    int32_t pos = 0;
+    while (pos < (int32_t)DRUM_KITS - 1 && DS_KIT_NAV[pos] != kit)
+        pos++;
+    pos += d;
+    if (wrap)
+        pos = ((pos % (int32_t)DRUM_KITS) + (int32_t)DRUM_KITS) % (int32_t)DRUM_KITS;
+    return DS_KIT_NAV[clamp(pos, 0, (int32_t)DRUM_KITS - 1)];
+}
+
 static struct {
     voice_t v[NDRUM];
     uint32_t age;
     int16_t set;                 /* SMP_SETS index of "PERC" (GM map), -1 = none */
+    int16_t beat;                /* Jangada: GLO > KIT BEAT, the factory beat last chosen (0 = --) */
     int32_t tail;                /* declick: the last output of cut voices, decaying */
     int32_t peak;                /* largest |output| since the UI last looked (TRACKS meter) */
     uint8_t kick;                /* Jangada: a kick (GM 35 / 36) since the master's DUCK looked (fx.c duck_block) */

@@ -266,6 +266,27 @@ static void edit_param(uint32_t slot, int32_t steps)
     d = page_desc(pg, slot, &vp);
     if (!d || !vp || d->max == d->min)
         return;
+    if (pg->scope == SC_GLOBAL && id == G_KIT) {          /* Jangada: the kits in the browser's order */
+        drum_kit_set(drum_kit_step(drum_kit(), accel(EN_K1 + slot, steps, d->max - d->min), 0));
+        return;
+    }
+    if (id == PG_BEAT) {                                  /* Jangada: a factory beat into the drum track */
+        if (!is_drum(TDRUM)) {
+            ui_message("TRACK 4: SYNTH");
+            return;
+        }
+        if (!seq_replaceable(TDRUM) && ui.arm != PG_BEAT) {   /* the user's own pattern: a second turn */
+            ui.arm = (uint8_t)PG_BEAT;
+            ui.arm_t = 90;
+            ui_say("AGAIN: ", d->label);
+            return;
+        }
+        ui.arm = 0;
+        v = clamp(*vp + (steps > 0 ? 1 : -1), 1, d->max);
+        load_beat((uint32_t)v - 1u);
+        ui_say("BEAT ", d->names[v]);
+        return;
+    }
     v = clamp(*vp + accel(EN_K1 + slot, steps, d->max - d->min), d->min, d->max);
     *vp = (int16_t)v;
     if (pg->scope == SC_TRACK && (id == P_VOICE || id == P_ALLOC))
@@ -500,7 +521,7 @@ static void ui_input(void)
          * elsewhere a stray turn would throw away the sound being edited */
         uint32_t total, cur = preset_pos(&total);
         if (is_drum(TSEL)) {                        /* Jangada: the drum track browses the kits */
-            song.g[G_KIT] = (int16_t)((drum_kit() + (s > 0 ? 1u : DRUM_KITS - 1u)) % DRUM_KITS);
+            drum_kit_set(drum_kit_step(drum_kit(), s > 0 ? 1 : -1, 1));   /* the browser's order (DS_KIT_NAV) */
             ui_say("KIT ", DRUM_KIT_NAMES[drum_kit()]);
             ui.force = 1;
         } else if (total)

@@ -7,7 +7,8 @@ static const char *const N_DIV[] = {"1/4", "1/8", "1/16", "1/32", "8T", "16T"};
 /* arp RATE and sequencer DIV: N_DIV plus long values for drones (appended, so saved indices keep their meaning) */
 static const char *const N_DIVL[] = {"1/4", "1/8", "1/16", "1/32", "8T", "16T", "1/2", "1/1", "2BAR", "4BAR"};
 static const char *const N_SCALE[] = {"CHR", "MAJ", "MIN", "DOR", "MIX", "PEN", "MPEN", "HARM",
-                                    "PHRY", "LYD", "LOC", "MEL", "BLUES", "WHOLE", "DIMHW", "DIMWH"};
+                                    "PHRY", "LYD", "LOC", "MEL", "BLUES", "WHOLE", "DIMHW", "DIMWH",
+                                    "NORD"};   /* Jangada: appended (saved indices keep their scale) */
 static const char *const N_ONOFF[] = {"OFF", "ON"};
 static const char *const N_T4[] = {"DRUM", "SYNTH"};
 /* Jangada modulation matrix (mod.c): sources, and the targets before the engine's own (MD_E0..) */
@@ -24,6 +25,7 @@ static const char *const N_CLOCK[] = {"INT", "USB", "TRS"};   /* Jangada: follow
 static const char *const N_SYNC[] = {"OFF", "OUT"};    /* Jangada: OUT = send MIDI clock (USB) */
 static const char *const N_CHORD[] = {"OFF", "TRIAD", "7TH", "9TH", "SUS4", "POWER"};   /* seq.c CHORD_DEG (Jangada) */
 static const char *const N_KIT[] = {"GM", DS_KIT_NAME_LIST};   /* drums.c DRUM_KIT_NAMES (Jangada) */
+static const char *const N_BEAT[] = {"--", DS_BEAT_NAME_LIST};  /* Jangada: GLO > KIT BEAT (DS_BEATS) */
 static const char *const N_RTYPE[] = {"ROOM", "SPRING", "PLATE"};   /* fx.c (Jangada) */
 /* Jangada GRIT: the DIST types (fx.c track_dist); SOFT first: older projects and presets keep their sound */
 static const char *const N_DTYPE[] = {"SOFT", "FUZZ", "FOLD", "CRUSH", "RING"};
@@ -277,6 +279,7 @@ typedef struct {
     uint8_t fam, scope, graph;
     uint8_t id[4];               /* param ids; 0xFF = empty slot */
 } page_t;
+#define PG_BEAT 0xFEu            /* Jangada: GLO > KIT's BEAT column (drums.beat, page_desc; not a G_ param) */
 
 static const page_t PAGES[] = {
     {"ENV", FAM_ENV, SC_TRACK, GR_ADSR, {P_ATK, P_DEC, P_SUS, P_REL}},
@@ -306,7 +309,7 @@ static const page_t PAGES[] = {
     {"DRUMS", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DRCH, G_DRLVL, G_DRREV, G_T4}},   /* GM kit on MIDI ch 10; T4: Jangada */
     {"MASTER", FAM_GLO, SC_GLOBAL, GR_NONE, {G_DUST, G_DUCK, G_FILT, G_TAPE}},
     {"MASTER 2", FAM_GLO, SC_GLOBAL, GR_NONE, {G_HUM, G_TAPE, G_DUST, 0xFF}},   /* Jangada GRIT: the noise of the past */
-    {"KIT", FAM_GLO, SC_GLOBAL, GR_NONE, {G_KIT, G_DRLVL, G_DRREV, 0xFF}},   /* Jangada: the drum kit */    /* Jangada: the master bus (fx.c) */
+    {"KIT", FAM_GLO, SC_GLOBAL, GR_NONE, {G_KIT, G_DRLVL, G_DRREV, PG_BEAT}},   /* Jangada: the drum kit, a beat */
     {"PRESETS", FAM_SAVE, SC_GLOBAL, GR_BROWSE, {0xFF, 0xFF, 0xFF, 0xFF}},   /* browser: PRESETS knob / KNOB 1 */
     {"USER", FAM_SAVE, SC_GLOBAL, GR_USER, {0xFF, 0xFF, 0xFF, 0xFF}},       /* user presets: SLOT LOAD ERASE SAVE */
     {"PROJECT", FAM_SAVE, SC_GLOBAL, GR_SLOTS, {G_SLOT, 0xFF, G_LOAD, G_SAVE}},
@@ -347,7 +350,12 @@ static int page_used(uint32_t pi)
 
 static const param_desc_t *page_desc(const page_t *pg, uint32_t slot, int16_t **valp)
 {
+    static const param_desc_t BEAT_D = PE("BEAT", N_BEAT, 0);
     uint32_t id = pg->id[slot];
+    if (id == PG_BEAT) {                               /* Jangada: not saved; turning it loads a beat */
+        *valp = &drums.beat;
+        return &BEAT_D;
+    }
     if (id == 0xFFu || (is_drum(TSEL) && (!page_for_drum(pg) || (pg->scope == SC_GLOBAL && id == G_INITSND)))) {
         *valp = 0;
         return 0;
