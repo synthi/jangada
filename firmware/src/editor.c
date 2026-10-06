@@ -285,7 +285,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     }
     switch (cmd) {
     case ED_INFO:
-        ed_str("FELUCCA " FELUCCA_VERSION, 24);
+        ed_str("JANGADA " FELUCCA_VERSION, 24);           /* (the editor shows it; the backup file keeps it) */
         ed_b(NENGINES);
         ed_b(P_COUNT);
         ed_b(G_COUNT);
