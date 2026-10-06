@@ -455,7 +455,7 @@ static void con_exec(const char *p)
 static void cdc_task(void)                              /* main loop */
 {
     if (cdc.dtr && !con.dtr_seen) {
-        con_puts("\r\nFelucca ");
+        con_puts("\r\nJangada ");
         con_puts(FELUCCA_VERSION);
         con_puts(" console - 'help'\r\n> ");
     }
