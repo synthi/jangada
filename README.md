@@ -34,7 +34,7 @@ Rendered by the firmware's own DSP (the same C code, run on a PC):
 
 ## Install
 
-Current version: **[Jangada 0.2](https://github.com/zednaked/jangada/releases/tag/v0.2)** (alpha).
+Current version: **[Jangada 0.3](https://github.com/zednaked/jangada/releases/tag/v0.3)** (alpha).
 Plug the FM-1 straight into the computer with a USB **data** cable.
 
 **Mac / Windows / Linux, in the browser**: open the
@@ -45,7 +45,7 @@ Plug the FM-1 straight into the computer with a USB **data** cable.
 
 ```
 ./instalar-linux.sh                    # downloads and installs the latest release
-./instalar-linux.sh jangada-0.2.fwsc   # installs a file downloaded from the releases
+./instalar-linux.sh jangada-0.3.fwsc   # installs a file downloaded from the releases
 ./instalar-linux.sh --original         # back to M-VAVE's official firmware (V15)
 ./instalar-linux.sh --info             # what the FM-1 is running
 ./instalar-linux.sh --console          # serial console access (a udev rule, asks for sudo)
@@ -126,6 +126,15 @@ with the sound, the engine, the steps and the playhead, the level and the REC / 
 ### USB audio
 The FM-1 shows up on the computer as a stereo audio input (44.1 kHz, "Jangada"), no driver needed:
 record the master straight into the DAW (HOME → USB AUDIO: the level follows MASTER, or FULL) (on Linux: `arecord -D hw:Jangada -f S16_LE -r 44100 -c 2 take.wav`).
+
+### Web editor and installer
+On the **[Jangada site](https://zednaked.github.io/jangada/)** (Chrome or Edge):
+- **Backup and restore** (editor → Projects → Backup): everything on the FM-1 in one file
+  `jangada-backup-DATE.json` (the working project, the 4 projects, the 32 presets, the samples
+  USR1–3, the settings), and back. A damaged file is refused before anything is written.
+- **CHOP** (editor → Samples): cut a recording of any length into up to 16 chops, keep the ones you
+  want, shorten them, *Fit to slot*, and send them to USR1–3.
+- **Back to the official firmware** from the installer (M-VAVE's FM-1 V15 file), a backup first.
 
 ### Storage and safety
 - **Autosave**: stopped and untouched for a few seconds, the project goes to flash and comes back at

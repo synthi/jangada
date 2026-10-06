@@ -34,7 +34,7 @@ Gerados pelo próprio DSP do firmware (o mesmo código C, rodando num PC):
 
 ## Instalar
 
-Versão atual: **[Jangada 0.2](https://github.com/zednaked/jangada/releases/tag/v0.2)** (alfa).
+Versão atual: **[Jangada 0.3](https://github.com/zednaked/jangada/releases/tag/v0.3)** (alfa).
 Conecte o FM-1 direto no computador por um cabo USB **de dados**.
 
 **Mac / Windows / Linux, pelo navegador**: abra o
@@ -45,7 +45,7 @@ Conecte o FM-1 direto no computador por um cabo USB **de dados**.
 
 ```
 ./instalar-linux.sh                    # baixa e instala a última versão publicada
-./instalar-linux.sh jangada-0.2.fwsc   # instala um arquivo baixado das releases
+./instalar-linux.sh jangada-0.3.fwsc   # instala um arquivo baixado das releases
 ./instalar-linux.sh --original         # volta ao firmware oficial da M-VAVE (V15)
 ./instalar-linux.sh --info             # o que o FM-1 está rodando
 ./instalar-linux.sh --console          # acesso ao console serial (regra udev, pede sudo)
@@ -126,6 +126,15 @@ por trilha com o som, o motor, os passos e o playhead, o nível e os selos REC /
 ### Áudio por USB
 O FM-1 aparece no computador como uma entrada de áudio estéreo (44,1 kHz, "Jangada"), sem driver:
 grave o master direto na DAW (HOME → USB AUDIO: o nível segue o MASTER, ou FULL) (no Linux: `arecord -D hw:Jangada -f S16_LE -r 44100 -c 2 take.wav`).
+
+### Editor e instalador web
+No **[site da Jangada](https://zednaked.github.io/jangada/)** (Chrome ou Edge):
+- **Backup e restauração** (editor → Projects → Backup): tudo do FM-1 num arquivo
+  `jangada-backup-DATA.json` (o projeto de trabalho, os 4 projetos, os 32 presets, os samples
+  USR1–3, as configurações), e de volta. Um arquivo danificado é recusado antes de qualquer gravação.
+- **CHOP** (editor → Samples): corte uma gravação de qualquer tamanho em até 16 fatias, escolha as que
+  ficam, encurte, *Fit to slot*, e mande para USR1–3.
+- **Voltar ao firmware oficial** pelo instalador (o arquivo FM-1 V15 da M-VAVE), com um backup antes.
 
 ### Memória e segurança
 - **Autosave**: parado e sem mexer por alguns segundos, o projeto vai para a flash e volta ao ligar.
