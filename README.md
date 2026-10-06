@@ -34,18 +34,30 @@ Rendered by the firmware's own DSP (the same C code, run on a PC):
 
 ## Install
 
-**Linux** — plug the FM-1 in with a USB data cable:
+Current version: **[Jangada 0.2](https://github.com/zednaked/jangada/releases/tag/v0.2)** (alpha).
+Plug the FM-1 straight into the computer with a USB **data** cable.
+
+**Mac / Windows / Linux, in the browser**: open the
+**[Jangada web installer](https://zednaked.github.io/jangada/)** in Chrome or Edge and press
+*Install*. It carries the latest release; the web editor is next to it.
+
+**Linux, from a terminal**: clone this repository and run
 
 ```
-./instalar-linux.sh                    # the latest release
+./instalar-linux.sh                    # downloads and installs the latest release
+./instalar-linux.sh jangada-0.2.fwsc   # installs a file downloaded from the releases
 ./instalar-linux.sh --original         # back to M-VAVE's official firmware (V15)
 ./instalar-linux.sh --info             # what the FM-1 is running
 ./instalar-linux.sh --console          # serial console access (a udev rule, asks for sudo)
 ```
 
-It sets up its own Python environment (`mido` + `python-rtmidi`) in `~/.local/share/jangada/`.
-**Mac / Windows**: Felucca's [web installer](https://hugelton.github.io/Felucca/) (Chrome or Edge)
-installs the `.fwsc` from the [releases](https://github.com/zednaked/jangada/releases) too.
+It sets up its own Python environment (`mido` + `python-rtmidi`) in `~/.local/share/jangada/` and
+checks the SHA-256 of what it downloaded.
+
+- **If an install fails**: hold **OCT−** while switching the FM-1 on (USB rescue) and install again.
+- **Back to the official firmware**: `./instalar-linux.sh --original`, or M-VAVE's M-UPGRADE.
+- Since 0.2 the FM-1 shows up on the computer as **Jangada** (MIDI and audio). Felucca's web
+  installer no longer finds an FM-1 running Jangada: use Jangada's.
 
 ## What's new over Felucca
 
