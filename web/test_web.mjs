@@ -9,6 +9,8 @@
 //   and the user-sample pipeline byte for byte against tools/sampleio.py
 // - fm1pkg.js: productOf and logicalImage on build/felucca.fwsc (skipped without a build)
 // - fm1ota.js: a full install and an unplug during the write against a simulated FM-1
+// - fm1backup.js (Jangada, v5): a complete backup of the editor's mock device and its restore into an
+//   empty one, through the editor's own Link (web/test_backup.mjs checks the module alone)
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
@@ -17,6 +19,7 @@ import { join } from "node:path";
 import vm from "node:vm";
 import { logicalImage, productOf } from "./fm1pkg.js";
 import { Updater, pack7, unpack7 } from "./fm1ota.js";
+import * as BK from "./fm1backup.js";
 
 let failed = 0;
 const ok = (cond, what) => { console.log(`${what.padEnd(64)} ${cond ? "ok" : "FAIL"}`); if (!cond) failed++; };
@@ -428,6 +431,55 @@ async function editorTrackParam() {
   o.done();
 }
 
+/* ------------------------------------- v5 (Jangada): backup -> restore --- */
+async function editorBackup() {
+  const A = attachMock({});
+  const info = E.parse[E.CMD.INFO](await A.rq(E.req.info()));
+  ok(info.proto === BK.BACKUP_PROTO, "backup: INFO ends with the protocol version (5)");
+  /* something in every kind of object: projects 2 and 4, a user preset in bank 2, a sample in USR3 */
+  await A.rq(E.req.set(1, 0, 133));
+  await A.rq(E.req.project(1, 1), { timeout: 4000, retries: 0 });
+  await A.rq(E.req.set(1, 0, 97));
+  await A.rq(E.req.project(1, 3), { timeout: 4000, retries: 0 });
+  await A.rq(E.req.set(1, 0, 121));
+  await A.rq(E.req.upStore(20, "BACKUP ME"));
+  const s = Int16Array.from({ length: 4000 }, (_, i) => Math.round(9000 * Math.sin(i / 5)));
+  const { hdr, data } = E.buildSlot("keep", [{ s, root: 60 }]);
+  await A.rq(E.req.smpBegin(2), { timeout: 1000, retries: 0 });
+  for (let off = 0; off < data.length; off += 256) await A.rq(E.req.smpWrite(2, E.SMP.DATA_OFF + off, data.subarray(off, off + 256)), { timeout: 1000 });
+  await A.rq(E.req.smpEnd(2, hdr), { timeout: 2000, retries: 0 });
+  let prog = 0;
+  const file = await BK.captureBackup(A.rq, info.version, (d, n) => { prog = d / n; });
+  const text = JSON.stringify(file, null, 1);
+  ok(file.format === "jangada-backup" && file.objects.length === 11 && prog === 1 && file.objects[3].size > 0 && file.objects[4].size === 0 &&
+     file.objects[7].size > 0 && file.objects[10].size === E.SMP.DATA_OFF + data.length && file.objects[8].size === 0,
+     "backup: the mock FM-1 into one file (11 objects, empty ones as 0)");
+  ok(/^jangada-backup-\d{4}-\d\d-\d\d\.json$/.test(BK.backupName()), "backup: the file is jangada-backup-DATE.json");
+  /* into an empty FM-1: what comes back is what went in */
+  const B = attachMock({});
+  const sent = () => (B.sent[E.CMD.BK_PUT] || 0) + (B.sent[E.CMD.SMP_BEGIN] || 0) + (B.sent[E.CMD.SMP_ERASE] || 0);
+  const damaged = JSON.parse(text); damaged.objects[3].data = damaged.objects[3].data.replace(/^./, (c) => (c === "A" ? "B" : "A"));
+  const refused = await BK.restoreBackup(B.rq, damaged).then(() => null, (e) => e);
+  ok(refused && refused.code === "bkBad" && sent() === 0, "backup: a damaged file is refused before anything is written");
+  const sloop = JSON.parse(text); sloop.format = "sloop-backup";
+  ok(await BK.restoreBackup(B.rq, sloop).then(() => false, (e) => e.code === "bkBad") && sent() === 0, "backup: another firmware's backup is refused");
+  await BK.restoreBackup(B.rq, text);
+  const back = await BK.captureBackup(B.rq, "B");
+  ok(back.objects.every((o, i) => o.crc === file.objects[i].crc && o.data === file.objects[i].data), "backup: restore into an empty FM-1, then a backup of it: the same file");
+  const bpm = E.parse[E.CMD.GET](await B.rq(E.req.get(1, 0))).value;
+  const u = E.parse[E.CMD.UP_GET](await B.rq(E.req.upGet(20)), info);
+  const smp = E.parse[E.CMD.SMP_INFO](await B.rq(E.req.smpInfo()));
+  const pj = E.parse[E.CMD.PROJECT](await B.rq(E.req.project(2, 3)));
+  ok(bpm === 121 && u.used && u.name === "BACKUP ME" && smp.slots[2].zones === 1 && smp.slots[2].name === "KEEP" && pj.used === 1,
+     "backup: the working project, a user preset, a sample and a project are back");
+  /* a song playing on the device (the mock's commit answers 3) / a firmware without the backup */
+  const C = attachMock({ noBackup: true });
+  const ci = E.parse[E.CMD.INFO](await C.rq(E.req.info()));
+  const none = await BK.captureBackup((r, o) => C.rq(r, { ...o, timeout: 60, retries: 0 }), "x").then(() => "ok", (e) => e.message);
+  ok(ci.proto === 0 && /^timeout/.test(none), "backup: firmware without it: INFO has no version, LIST no reply");
+  A.done(); B.done(); C.done();
+}
+
 /* ------------------------------------------------- editor tabs and strings --- */
 function editorTabs() {
   const tabs = [...html.matchAll(/<button role="tab" data-tab="(\w+)"/g)].map((x) => x[1]);
@@ -607,6 +659,7 @@ await editorLive();
 await editorTracks();
 await editorMixer();
 await editorTrackParam();
+await editorBackup();
 editorTabs();
 editorIcons();
 samplesMatch();

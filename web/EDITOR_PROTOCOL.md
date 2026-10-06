@@ -1,6 +1,6 @@
 # Felucca editor protocol (SysEx over USB-MIDI)
 
-The firmware side is `firmware/src/editor.c`. Commands 16-26 (user presets and live sync) form protocol v2; commands 27-30 (tracks) form protocol v3; commands 31-32 (any track's parameters) form protocol v4.
+The firmware side is `firmware/src/editor.c`. Commands 16-26 (user presets and live sync) form protocol v2; commands 27-30 (tracks) form protocol v3; commands 31-32 (any track's parameters) form protocol v4; commands 34-36 (Jangada: backup / restore, `firmware/src/editor_backup.c`) form protocol v5.
 
 **v3 (four tracks):** the device has four tracks: 1..3 are synth parts, 4 is the drum track. One
 of them is *selected* (the TRACKS page on the device, or `TRACK`). Every v1 / v2 command acts on the
@@ -38,7 +38,7 @@ after an engine change.
 
 | cmd | Request args | Reply args |
 | --- | --- | --- |
-| 1 INFO | — | version string, NENGINES, P_COUNT, G_COUNT, NSTEP, P_E0, then NENGINES engine-name strings, then (v3) NTRK (4); older firmware ends after the names |
+| 1 INFO | — | version string, NENGINES, P_COUNT, G_COUNT, NSTEP, P_E0, then NENGINES engine-name strings, then (v3) NTRK (4), then (v5, Jangada) the protocol version (5); older firmware ends after the names or after NTRK |
 | 2 GET | scope, id | scope, id, v14 |
 | 3 SET | scope, id, v14 | scope, id, v14 (the value after clamping). Setting global `G_ENGSEL` (id from DESC label "ENG") changes the engine with its defaults |
 | 4 DUMP | — | engine, preset, then P_COUNT × v14 (the selected track), then G_COUNT × v14 (globals) |
@@ -186,6 +186,50 @@ editor takes both from `INFO`; records stored with 53 load with the SLICER off.
   `TRACK_PARAM` / `TRACK_MIX` writes. After a selection change (`RELOAD`, or the editor's `TRACK`) the
   device takes the current values as known.
 
+## v5 (Jangada): backup / restore
+
+From SLOOP 2.3 and Felucca 1.0.1 (the same commands as SLOOP's v6, numbered as SLOOP numbers them; 33 is
+SLOOP's `DRUM_STEP`, not in Jangada). `INFO` ends with 5. The editor and the installer use it through
+`web/fm1backup.js`.
+
+Requests name **objects**, never flash addresses:
+
+| id | object | bytes |
+| --- | --- | --- |
+| 0 | the working project (as it is now) | "JNG1" (`project.c` `proj_to_jng`, as the autosave stores it) |
+| 1 | the settings | `persist_t` "PER2": palette, low cut, zoom, the panel calibration (`panel_t`) |
+| 2..5 | the projects 1..4 | "JNG1"; length 0 = empty slot |
+| 6..7 | the user preset banks (presets 1..16, 17..32) | `up_bank_t` "UPB2" (`upreset.c`, keyed); length 0 = empty |
+| 32..34 | the user sample slots USR1..3 | header + ADPCM data as in flash (512 + data length); 0 = empty |
+
+Numbers are 5 × 7 bit, LSB first (u35); data is pack7. Objects 0..7 are at most 3840 bytes (one storage
+object), a sample slot at most 80 KiB.
+
+| cmd (v5) | Request args | Reply args |
+| --- | --- | --- |
+| 34 BK_LIST | — | rc (0 ok, 4 no flash), count (11), then per object: id, length u35, CRC-32 u35 (zlib). Takes a snapshot of the working project for `BK_GET` |
+| 35 BK_GET | id, offset u35, count (2 × 7 bit, 1..256) | id, rc (0 ok, 1 arguments, 5 the snapshot is gone: `BK_LIST` again), offset u35, count, pack7 data |
+| 36 BK_PUT | op 0 begin: id 0..7, length u35, CRC-32 u35 · op 1 data: id, offset u35, pack7 (≤ 256 bytes, in order) · op 2 commit: id · op 3 abort: id | op, id, rc: 0 ok, 1 arguments, 2 not a valid object, 3 stop the song first, 4 flash, 5 no begin for this object (or a USB reset, or more than 15 s since the last request) |
+
+- **Reading.** `BK_LIST` once, then each object from offset 0 in order (object 0 first: the snapshot of
+  the working project lives in the device's project buffer, and reading another project, or a project
+  save / load on the panel, replaces it: `BK_GET` of object 0 then answers 5). Check each object against
+  the CRC of `BK_LIST`; a mismatch means it changed during the backup: start again.
+- **Writing.** `BK_PUT` stages one object in RAM; the commit checks the CRC, then the object as a load
+  checks it — projects: "JNG1" (or Felucca's FUN3 / FUN2 / FUN1, converted) with its size and sum, stored
+  as "JNG1"; banks: magic, record size, slot count, key count (other keys are mapped as at boot);
+  settings: magic, palette, low cut, a permutation of the buttons and knobs — and writes it through the
+  usual A/B commit (a cut-off restore leaves the old object or the new one, never half). The working
+  project (0) is loaded at once instead of written. Every commit needs the song stopped (rc 3): a flash
+  erase stops the audio for a moment. The autosave waits while a backup runs.
+- **Samples** are restored with `SMP_BEGIN` / `SMP_WRITE` / `SMP_END` (the header is the first 480 bytes
+  of the object, the data from byte 512), an empty slot with `SMP_ERASE`. An interrupted sample restore
+  leaves that slot empty.
+- **The file** (`jangada-backup-YYYY-MM-DD.json`): `{format: "jangada-backup", version: 1, firmware,
+  created, objects: [{id, size, crc, data (base64)}]}`, the 11 objects in the order above. It is checked
+  whole (every size and CRC, the sample headers as the device reads them) before anything is written;
+  restore order: the projects and banks, the samples, the settings, the working project last.
+
 ## Notes for the editor
 
 - **One request at a time.** Wait for the reply, about 10–50 ms, before sending the next.
@@ -195,5 +239,5 @@ editor takes both from `INFO`; records stored with 53 load with the SLICER off.
 - **Port.** The device's MIDI port is named "Felucca" (USB 1209:0001). Updates use the same
   port with other SysEx (the `F0 22 24 35 …` keys, `00 59 …` frames); never send those
   from the editor.
-- **Safety.** Only `PROJECT` save, the sample-slot commands and `UP_PUT` / `UP_STORE` / `UP_ERASE` write flash, and only in
-  Felucca's own storage; never the app or the update area.
+- **Safety.** Only `PROJECT` save, the sample-slot commands, `UP_PUT` / `UP_STORE` / `UP_ERASE` and the `BK_PUT`
+  commit write flash, and only in the firmware's own storage; never the app or the update area.

@@ -413,6 +413,8 @@ static void proj_apply(const project_t *p)
 #define AUTOSAVE_GAP 20000u                    /* ms between two saves at least */
 static project_t autosave_buf;
 static uint32_t autosave_sum, autosave_ms, autosave_checked;
+static uint32_t autosave_hold;                 /* fm1_ms until which it waits: an editor backup uses proj_io
+                                                * (editor_backup.c) */
 
 static int audio_quiet(void)                   /* no voice of any track, no drum */
 {
@@ -435,7 +437,7 @@ static void autosave_tick(void)                /* main loop */
         settings_save();
     }
     if (!flash_ok || song.playing || ui.menu || now - ui_input_ms < AUTOSAVE_IDLE ||
-        now - autosave_ms < AUTOSAVE_GAP || now - autosave_checked < 1000u)
+        now - autosave_ms < AUTOSAVE_GAP || now - autosave_checked < 1000u || (int32_t)(autosave_hold - now) > 0)
         return;
     autosave_checked = now;
     proj_capture(&autosave_buf);

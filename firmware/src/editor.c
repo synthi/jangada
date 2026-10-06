@@ -2,7 +2,8 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Editor protocol: SysEx for the web editor (web/EDITOR_PROTOCOL.md; v2 = user presets + live sync,
  * v3 = four tracks: the v1 / v2 commands act on the selected track, cmds 27-30 reach any track;
- * v4 = TRACK_PARAM (31) and the TRACK_CHANGED push (32), enabled by WATCH bit 1).
+ * v4 = TRACK_PARAM (31) and the TRACK_CHANGED push (32), enabled by WATCH bit 1;
+ * v5 (Jangada) = backup / restore, cmds 34-36 (editor_backup.c); INFO ends with the version).
  *   F0 7D 46 4C cmd args.. F7     (7D = non-commercial ID, "FL")
  * Values are 14 bit, two 7-bit bytes LSB first, offset by 8192 (so -8192..8191).
  * Every request gets a reply with the same cmd; 23/24/26 are also pushed
@@ -16,7 +17,10 @@ enum { ED_INFO = 1, ED_GET, ED_SET, ED_DUMP, ED_DESC, ED_STEP_GET, ED_STEP_SET, 
        ED_UP_LIST, ED_UP_GET, ED_UP_PUT, ED_UP_STORE, ED_UP_LOAD, ED_UP_ERASE,   /* v2: user presets */
        ED_WATCH, ED_CHANGED, ED_RELOAD, ED_PING, ED_STEP_CHANGED,              /* v2: live sync */
        ED_TRACK, ED_TRACK_MIX, ED_TRACK_DUMP, ED_TRACK_STEP,                    /* v3: tracks */
-       ED_TRACK_PARAM, ED_TRACK_CHANGED };                                      /* v4: any track's parameters */
+       ED_TRACK_PARAM, ED_TRACK_CHANGED,                                        /* v4: any track's parameters */
+       ED_BK_LIST = 34, ED_BK_GET, ED_BK_PUT };                                 /* v5: backup / restore (33: SLOOP's
+                                                                                 * DRUM_STEP, not here) */
+#define ED_PROTO 5u                                                              /* INFO's last byte */
 
 static uint8_t ed_out[600];
 static uint32_t ed_n;
@@ -265,6 +269,8 @@ static const param_desc_t *ed_desc(uint32_t scope, uint32_t id, int16_t **vp)
     return 0;
 }
 
+#include "editor_backup.c"                             /* v5: backup / restore */
+
 static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0 and F7 */
 {
     uint32_t cmd = f[3], i;
@@ -273,6 +279,10 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
     int16_t *vp;
     const param_desc_t *d;
     ed_begin(cmd);
+    if (ed_backup(cmd, a, na)) {                          /* v5: backup / restore */
+        ed_send();
+        return;
+    }
     switch (cmd) {
     case ED_INFO:
         ed_str("FELUCCA " FELUCCA_VERSION, 24);
@@ -284,6 +294,7 @@ static void ed_handle(const uint8_t *f, uint32_t n)   /* f: the bytes between F0
         for (i = 0; i < NENGINES; i++)
             ed_str(ENGINES[i]->name, 8);
         ed_b(NTRK);                                       /* v3 */
+        ed_b(ED_PROTO);                                   /* v5: the protocol version */
         break;
     case ED_GET:
     case ED_SET:

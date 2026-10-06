@@ -270,6 +270,14 @@
     <h2 data-t="projects" data-ic="symbol_folder"></h2>
     <p class="dim" data-t="projHelp"></p>
     <div class="slots" id="slots"></div>
+    <div class="group" id="bkgroup" style="margin-top:16px" hidden>
+      <h2 data-t="bkTitle" data-ic="port_disk"></h2>
+      <p class="dim" data-t="bkHelp"></p>
+      <p class="bar"><button id="bk-save" data-t="bkSave" data-ic="symbol_download"></button>
+        <button id="bk-load" data-t="bkLoad" data-ic="symbol_upload"></button>
+        <input id="bk-file" type="file" accept=".json,application/json" hidden></p>
+      <progress id="bk-prog" max="1" value="0" hidden></progress>
+    </div>
   </section>
 
   <section class="panel" id="p-settings" data-tab="settings" data-dev hidden>
@@ -294,7 +302,8 @@ const CMD = { INFO: 1, GET: 2, SET: 3, DUMP: 4, DESC: 5, STEP_GET: 6, STEP_SET: 
   UP_LIST: 16, UP_GET: 17, UP_PUT: 18, UP_STORE: 19, UP_LOAD: 20, UP_ERASE: 21,
   WATCH: 22, CHANGED: 23, RELOAD: 24, PING: 25, STEP_CHANGED: 26,
   TRACK: 27, TRACK_MIX: 28, TRACK_DUMP: 29, TRACK_STEP: 30,
-  TRACK_PARAM: 31, TRACK_CHANGED: 32 };
+  TRACK_PARAM: 31, TRACK_CHANGED: 32,
+  BK_LIST: 34, BK_GET: 35, BK_PUT: 36 };              /* v5 (Jangada): backup / restore (fm1backup.js) */
 /* frames the device sends on its own (while WATCH is on); never replies */
 const PUSH = new Set([CMD.CHANGED, CMD.RELOAD, CMD.STEP_CHANGED, CMD.TRACK_CHANGED]);
 /* user preset bank: name 1..12 printable ASCII, a 16-step pattern of (note, flags 1 acc 2 slide 4 tie) */
@@ -330,6 +339,7 @@ const parse = {
     const o = { version: r.s(), nengines: r.b(), pcount: r.b(), gcount: r.b(), nstep: r.b(), pe0: r.b(), engines: [] };
     for (let i = 0; i < o.nengines; i++) o.engines.push(r.s());
     o.ntrk = r.i < a.length ? r.b() : 0;             /* v3: tracks (0 = older firmware, one instrument) */
+    o.proto = r.i < a.length ? r.b() : 0;            /* v5 (Jangada): the protocol version (0 = older firmware) */
     return o;
   },
   [CMD.GET](a) { const r = new Reader(a); return { scope: r.b(), id: r.b(), value: r.v() }; },
@@ -476,6 +486,8 @@ function replyMatches(cmd, args, a) {
     case CMD.TRACK_MIX: case CMD.TRACK_DUMP: return a[0] === args[0];
     case CMD.WATCH: return (a[0] & 1) === (args[0] & 1);   /* bit 1: v4 firmware only */
     case CMD.TRACK_STEP: case CMD.TRACK_PARAM: return a[0] === args[0] && a[1] === args[1];
+    case CMD.BK_GET: return a[0] === args[0] && [0, 1, 2, 3, 4].every((k) => a[2 + k] === args[1 + k]);
+    case CMD.BK_PUT: return a[0] === args[0] && a[1] === args[1];
     default: return true;
   }
 }
@@ -644,6 +656,9 @@ const CRC_TABLE = (() => {
   for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
   return t;
 })();
+/* v5 backup numbers: 5 x 7 bit, LSB first (u35) */
+function u35enc(v) { v >>>= 0; return [0, 1, 2, 3, 4].map((k) => Math.floor(v / 2 ** (7 * k)) & 0x7F); }
+function u35dec(a, i) { let v = 0; for (let k = 0; k < 5; k++) v += a[i + k] * 2 ** (7 * k); return v >>> 0; }
 function crc32(b) { let c = 0xFFFFFFFF; for (let i = 0; i < b.length; i++) c = CRC_TABLE[(c ^ b[i]) & 0xFF] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; }
 
 const IMA_STEP = [7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45, 50, 55, 60, 66, 73, 80, 88,
@@ -1288,6 +1303,41 @@ function makeMockDevice(opt = {}) {
   applyPreset(4);                                   /* ACID with its pattern */
   const project = () => JSON.parse(JSON.stringify({ tracks: st.tracks, sel: st.sel, g: st.g }));
   st.slots[0] = project();
+  /* v5 backup: the settings object (opaque here, its size as persist_t), the snapshot of LIST, a staged PUT */
+  st.settings = Uint8Array.from({ length: 48 }, (_, i) => (i * 37 + 5) & 0xFF);
+  st.bkSnap = null; st.bkPut = null;
+  /* the mock's objects: a project packed (it must fit one flash object, 3840 bytes, as the firmware's
+     "JNG1"), a bank as JSON {slot: preset}, the raw sample slots */
+  const bkProj = (o) => {
+    const out = [], w16 = (v) => out.push(v & 0xFF, (v >> 8) & 0xFF);
+    out.push(o.sel, o.g.length); o.g.forEach(w16);
+    for (const t of o.tracks) {
+      out.push(t.engine, t.preset, t.drum ? 1 : 0, t.p.length); t.p.forEach(w16);
+      for (const x of t.step) out.push(x.n, ...x.notes, x.time, x.flags, x.vel);
+    }
+    return Uint8Array.from(out);
+  };
+  const bkUnproj = (d) => {
+    let i = 0;
+    const r16 = () => { const v = d[i] | (d[i + 1] << 8); i += 2; return v >= 0x8000 ? v - 0x10000 : v; };
+    const o = { sel: d[i++], g: [], tracks: [] }, ng = d[i++];
+    for (let k = 0; k < ng; k++) o.g.push(r16());
+    for (let k = 0; k < 4; k++) {
+      const t = { engine: d[i++], preset: d[i++], drum: !!d[i++], p: [], step: [] }, np = d[i++];
+      for (let j = 0; j < np; j++) t.p.push(r16());
+      for (let j = 0; j < NSTEP; j++) { t.step.push({ n: d[i], notes: [d[i + 1], d[i + 2], d[i + 3], d[i + 4]], time: d[i + 5], flags: d[i + 6], vel: d[i + 7] }); i += 8; }
+      o.tracks.push(t);
+    }
+    if (i !== d.length) throw new Error("mock project size");
+    return o;
+  };
+  const bkEnc = (o) => Uint8Array.from(JSON.stringify(o).replace(/[\u0080-\uffff]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0")), (c) => c.charCodeAt(0));
+  const bkDec = (d) => JSON.parse(String.fromCharCode(...d));
+  const bkBank = (h) => {
+    const x = {};
+    for (let i = 0; i < 16; i++) if (st.bank[h * 16 + i]) x[i] = st.bank[h * 16 + i];
+    return Object.keys(x).length ? bkEnc(x) : new Uint8Array(0);
+  };
 
   function handle(cmd, a) {
     const out = [];
@@ -1368,6 +1418,7 @@ function makeMockDevice(opt = {}) {
         s(opt.legacy ? "FELUCCA 0.4 BETA (MOCK)" : "FELUCCA 0.5 BETA (MOCK)"); b(ENG.length); b(P_COUNT); b(G_COUNT); b(NSTEP); b(P_E0);
         ENG.forEach((e) => s(e.name));
         if (!opt.legacy) b(NTRK);
+        if (!opt.legacy && !opt.v3 && !opt.noBackup) b(5);   /* v5 (Jangada): backup / restore */
         break;
       case CMD.GET: case CMD.SET: {
         if (a.length < 2) return null;
@@ -1498,6 +1549,54 @@ function makeMockDevice(opt = {}) {
           }
         }
         b(a[0]); b(rc);
+        break;
+      }
+      /* v5 (Jangada) backup, as firmware/src/editor_backup.c */
+      case CMD.BK_LIST: {
+        if (opt.noBackup || opt.legacy || opt.v3) return null;
+        st.bkSnap = new Map([[0, bkProj(project())], [1, st.settings.slice()],
+          ...[0, 1, 2, 3].map((k) => [2 + k, st.slots[k] ? bkProj(st.slots[k]) : new Uint8Array(0)]),
+          [6, bkBank(0)], [7, bkBank(1)],
+          ...[0, 1, 2].map((k) => [32 + k, st.smp[k].zones ? st.smp[k].flash.slice(0, SMP.DATA_OFF + st.smp[k].len) : new Uint8Array(0)])]);
+        st.bkPut = null;
+        b(0); b(st.bkSnap.size);
+        for (const [id, d] of st.bkSnap) { b(id); out.push(...u35enc(d.length), ...u35enc(crc32(d))); }
+        break;
+      }
+      case CMD.BK_GET: {
+        if (opt.noBackup || opt.legacy || opt.v3 || a.length !== 8) return null;
+        const id = a[0], off = u35dec(a, 1), n = a[6] | (a[7] << 7);
+        const d = st.bkSnap && st.bkSnap.get(id);
+        const rc = !st.bkSnap || st.bkPut ? 5 : !d || !n || n > 256 || off + n > d.length ? 1 : 0;
+        b(id); b(rc); out.push(...u35enc(off)); b(rc ? 0 : n); b(rc ? 0 : n >> 7);
+        if (!rc) out.push(...pack7(d.subarray(off, off + n)));
+        break;
+      }
+      case CMD.BK_PUT: {
+        if (opt.noBackup || opt.legacy || opt.v3 || a.length < 2) return null;
+        const op = a[0], id = a[1];
+        let rc = 1;
+        if (op === 0) {
+          const len = a.length === 12 ? u35dec(a, 2) : -1;
+          if (id <= 7 && len >= 0 && len <= 3840 && (id >= 2 || len) && (id !== 1 || len === st.settings.length)) {
+            st.bkPut = { id, len, crc: u35dec(a, 7), pos: 0, buf: new Uint8Array(len) }; st.bkSnap = null; rc = 0;
+          }
+        } else if (!st.bkPut || st.bkPut.id !== id) rc = 5;
+        else if (op === 1 && a.length >= 9) {
+          const off = u35dec(a, 2), d = unpack7(a.slice(7));
+          if (off === st.bkPut.pos && d.length && d.length <= st.bkPut.len - off) { st.bkPut.buf.set(d, off); st.bkPut.pos += d.length; rc = 0; }
+        } else if (op === 2) {
+          const P = st.bkPut;
+          st.bkPut = null;
+          rc = P.pos !== P.len || crc32(P.buf) !== P.crc ? 2 : 0;
+          if (!rc) try {
+            if (id === 1) st.settings = P.buf.slice();
+            else if (id === 0) { const o = bkUnproj(P.buf); st.tracks = o.tracks; st.sel = o.sel; st.g = o.g; }
+            else if (id <= 5) st.slots[id - 2] = P.len ? bkUnproj(P.buf) : null;
+            else { const x = P.len ? bkDec(P.buf) : {}; for (let i = 0; i < 16; i++) st.bank[(id - 6) * 16 + i] = x[i] || null; }
+          } catch (e) { rc = 2; }
+        } else if (op === 3) { st.bkPut = null; rc = 0; }
+        b(op); b(id); b(rc);
         break;
       }
       case CMD.SMP_INFO:
@@ -1716,6 +1815,12 @@ const TEXT = {
     mixer: "ミキサー", mixHelp: "本体の TRACKS ページと同じ 4 トラック。フェーダーはレベル（ドラムは GLO > DRUMS LEVEL）。パンはどのトラックも選択を変えずに書き込みます（0.8 のファームウェアでは一瞬そのトラックを選びます）。REC は本体での録音待機の表示です。",
     level: "レベル", pan: "パン", mute: "ミュート", rec: "REC", selectTrack: "選択", selectedTrack: "選択中",
     projHelp: "プロジェクトは本体の状態をまとめて保存します: 4 トラックの音色とパターン、選択中のトラック、グローバル設定。",
+    bkTitle: "バックアップ", bkHelp: "FM-1 の中身をすべて 1 つのファイルに保存します: 今の曲、プロジェクト 1〜4、ユーザープリセット 32 個、サンプル USR1〜3、設定（色、ローカット、パネルのキャリブレーション）。ファイルはこのパソコンにだけ保存されます。復元すると、本体はファイルの状態に戻ります（今の内容は上書きされます）。壊れたファイルは書き込む前に断ります。",
+    bkSave: "バックアップを保存", bkLoad: "ファイルから復元", bkSaving: "バックアップ中 ", bkSaved: "バックアップを保存しました: ",
+    bkRestoring: "復元中 ", bkRestored: "復元しました", bkConfirm: "FM-1 の今の内容をすべてこのバックアップで置き換えます。続けますか？",
+    bkBad: "Jangada のバックアップファイルではないか、壊れています。何も書き込んでいません: ", bkStop: "FM-1 の再生を止めてから、もう一度復元してください。",
+    bkStale: "バックアップ中に本体の内容が変わりました。もう一度保存してください: ", bkRead: "読み取りエラー: ",
+    bkWrite: "書き込みエラー（途中までの項目は復元済み。もう一度復元できます）: ", bkFlash: "フラッシュに書き込めません: ",
     system: "システム", firmware: "ファームウェア", sync: "同期", tracksN: "トラック", stepsN: "ステップ数", enginesL: "エンジン",
     smpSlots: "サンプルスロット", userBank: "ユーザープリセット", none: "なし",
   },
@@ -1776,6 +1881,12 @@ const TEXT = {
     mixer: "Mixer", mixHelp: "The four tracks of the device's TRACKS page. The fader is the level (drums: GLO > DRUMS LEVEL). Pan is written to any track without changing the selection (firmware 0.8: by selecting it for a moment). REC shows a track armed for live recording on the device.",
     level: "Level", pan: "Pan", mute: "Mute", rec: "REC", selectTrack: "Select", selectedTrack: "Selected",
     projHelp: "A project keeps the whole device state: the sound and pattern of all four tracks, the selected track and the global settings.",
+    bkTitle: "Backup", bkHelp: "Everything on the FM-1 in one file: the music you are working on, the projects 1–4, the 32 user presets, the samples USR1–3 and the settings (colours, low cut, the panel calibration). The file stays on this computer. Restoring puts the FM-1 back as it was in the file (what is on it now is replaced); a damaged file is refused before anything is written.",
+    bkSave: "Save a backup", bkLoad: "Restore from a file", bkSaving: "Backing up ", bkSaved: "Backup saved: ",
+    bkRestoring: "Restoring ", bkRestored: "Restored", bkConfirm: "Replace everything on the FM-1 with this backup?",
+    bkBad: "Not a Jangada backup, or damaged. Nothing was written: ", bkStop: "Stop the FM-1 (PLAY), then restore again.",
+    bkStale: "The FM-1 changed during the backup; save it again: ", bkRead: "Read error: ",
+    bkWrite: "Write error (the objects before it are restored; you can restore again): ", bkFlash: "Cannot write the flash: ",
     system: "System", firmware: "Firmware", sync: "Sync", tracksN: "Tracks", stepsN: "Steps", enginesL: "Engines",
     smpSlots: "Sample slots", userBank: "User presets", none: "none",
   },
@@ -2066,6 +2177,7 @@ function buildUI() {
   renderSlots();
   renderSamples();
   renderSysinfo();
+  $("bkgroup").hidden = !(dev.info.proto >= 5);       /* v5 (Jangada) firmware: backup / restore */
 }
 
 /* the track selector (v3): T1..T3 synth parts, T4 the drum track; the editor shows the selected one */
@@ -3292,6 +3404,46 @@ function download(name, obj) {
 }
 const fileSlug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "patch";
 const today = () => new Date().toISOString().slice(0, 10);
+/* v5 (Jangada, after SLOOP 2.3 and Felucca 1.0.1): the complete backup and its restore. The work is in
+   fm1backup.js (the installer uses it too, for the backup before the return to the official firmware). */
+const backupModule = () => import("./fm1backup.js");
+function bkProgress(key) {
+  const pr = $("bk-prog");
+  pr.hidden = false;
+  pr.value = 0;
+  return (d, n) => { pr.value = d / n; sayK(key, `${Math.round(100 * d / n)} %`); };
+}
+function bkReport(e) {
+  if (e && e.code && TEXT[lang][e.code]) sayK(e.code, e.code === "bkStop" ? "" : e.message);
+  else report(e);
+}
+$("bk-save").addEventListener("click", () => op(async () => {
+  try {
+    const B = await backupModule(), name = B.backupName();
+    download(name, await B.captureBackup(rq, dev.info.version, bkProgress("bkSaving")));
+    sayK("bkSaved", name);
+  } catch (e) { bkReport(e); } finally { $("bk-prog").hidden = true; }
+}));
+$("bk-load").addEventListener("click", () => { if (dev) { $("bk-file").value = ""; $("bk-file").click(); } });
+$("bk-file").addEventListener("change", async () => {
+  const f = $("bk-file").files[0];
+  if (!f || !dev) return;
+  let B, file;
+  try { B = await backupModule(); file = B.readBackup(await f.text()); }   /* every byte checked before anything is written */
+  catch (e) { bkReport(e.code ? e : Object.assign(e, { code: "bkBad" })); return; }
+  if (!confirm(t("bkConfirm"))) return;
+  await op(async () => {
+    try {
+      selfLoad();
+      await B.restoreBackup(rq, file, bkProgress("bkRestoring"));
+    } catch (e) { bkReport(e); return; } finally { $("bk-prog").hidden = true; }
+    for (let k = 0; k < 4; k++) dev.slotUsed[k] = parse[CMD.PROJECT](await rq(req.project(2, k))).used;
+    renderSlots();
+    try { await smpInfo(); renderSamples(); } catch (e) { /* shown by the next action */ }
+    if (dev.bank) { dev.bank = await bank.list((r, o) => rq(r, { ...o, quiet: true })); renderBank(); }
+    await afterSoundChange("bkRestored");
+  });
+});
 $("libexp1").addEventListener("click", () => {
   const p = lib.find((x) => x.id === libSel);
   if (p) download(`felucca-patch-${fileSlug(p.name)}.json`, libraryFile("patch", [p], libCtx()));
