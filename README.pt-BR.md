@@ -111,6 +111,9 @@ por trilha com o som, o motor, os passos e o playhead, o nível e os selos REC /
   (rede de atrasos estéreo, do SLOOP).
 
 ### MIDI
+- **Entrada MIDI TRS** (o conector de 3,5 mm do FM-1): um teclado MIDI toca como pelo USB. Canais
+  1–3 tocam as trilhas de synth, o 4 a trilha 4 quando ela é SYNTH, o canal de bateria (GLO → DRUMS,
+  padrão 10) a bateria, os outros a trilha selecionada.
 - **Pitch bend** (±2 semitons), **sustain** (CC64), **all notes off** (CC120 / 123), reset (CC121).
 - **Mod wheel**, **aftertouch** e **expressão** (CC11) como origens da matriz (MODW, AT, EXPR).
 - **GLO → GLOBAL CLK USB**: segue o clock do computador (tempo, start, stop).

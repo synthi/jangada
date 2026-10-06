@@ -220,6 +220,11 @@ static void con_status(void)
     con_kv("midi_rx_held", (int32_t)usb.rx_held);     /* EP1 packets held back (NAK): the ring was full */
     con_kv("midi_rx_bad", (int32_t)usb.rx_bad);       /* malformed events ignored */
     con_kv("midi_tx_pkts", (int32_t)usb.tx_pkts);
+#if FELUCCA_UART
+    con_kv("trs_bytes", (int32_t)um.bytes);           /* TRS MIDI IN (midi_uart.c) */
+    con_kv("trs_msgs", (int32_t)um.msgs);
+    con_kv("trs_drops", (int32_t)um.drops);           /* the MIDI ring was full */
+#endif
 #if FELUCCA_UAC
     con_uac();
 #endif

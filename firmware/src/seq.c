@@ -824,8 +824,9 @@ static void events_block(uint32_t n)
         d1 = (pkt >> 16) & 0x7Fu;
         d2 = (pkt >> 24) & 0x7Fu;
         mi_r++;
-        if ((pkt & 0x0Fu) == 0x0Fu) {                  /* (Jangada: real time, the byte is the status) */
-            midi_clock_in((pkt >> 8) & 0xFFu);
+        if ((pkt & 0x0Fu) == 0x0Fu) {                  /* (Jangada: real time, the byte is the status; */
+            if (!(pkt & 0xF0u))                        /* cable 0 USB, 1 the TRS jack: USB only here) */
+                midi_clock_in((pkt >> 8) & 0xFFu);
             continue;
         }
         if (st == 0x90u && d2)

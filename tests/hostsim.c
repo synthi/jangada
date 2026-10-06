@@ -597,7 +597,7 @@ static int rec_test(void)
     return fail;
 }
 
-/* TRS MIDI IN (midi_uart.c, untested on hardware): bytes through its parser into the same queue as
+/* TRS MIDI IN (midi_uart.c, on by default): bytes through its parser into the same queue as
  * USB, routed by channel: 1..3 -> parts 1..3, 10 -> drums, others -> the selected track; running
  * status, note-on velocity 0 = note-off; a note-off on a "selected track" channel reaches the track
  * its note-on went to after another track was selected; recording into an armed track. */

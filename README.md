@@ -111,6 +111,9 @@ with the sound, the engine, the steps and the playhead, the level and the REC / 
   feedback delay network, from SLOOP).
 
 ### MIDI
+- **TRS MIDI input** (the FM-1's 3.5 mm jack): a MIDI keyboard plays as over USB. Channels 1–3
+  play the synth tracks, 4 track 4 when it is SYNTH, the drum channel (GLO → DRUMS, default 10) the
+  drums, any other the selected track.
 - **Pitch bend** (±2 semitones), **sustain** (CC64), **all notes off** (CC120 / 123), reset (CC121).
 - **Mod wheel**, **aftertouch** and **expression** (CC11) as matrix sources (MODW, AT, EXPR).
 - **GLO → GLOBAL CLK USB**: follows the computer's clock (tempo, start, stop).
