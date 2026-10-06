@@ -197,7 +197,7 @@ Requests name **objects**, never flash addresses:
 | id | object | bytes |
 | --- | --- | --- |
 | 0 | the working project (as it is now) | "JNG1" (`project.c` `proj_to_jng`, as the autosave stores it) |
-| 1 | the settings | `persist_t` "PER2": palette, low cut, zoom, the panel calibration (`panel_t`) |
+| 1 | the settings | `persist_t` "PER2": palette, low cut, zoom, the panel calibration (`panel_t`), the lights word (LIGHTS / KEYS / NOTES / USB AUDIO); one without the lights word (Jangada 0.2) is restored too, with the lights off |
 | 2..5 | the projects 1..4 | "JNG1"; length 0 = empty slot |
 | 6..7 | the user preset banks (presets 1..16, 17..32) | `up_bank_t` "UPB2" (`upreset.c`, keyed); length 0 = empty |
 | 32..34 | the user sample slots USR1..3 | header + ADPCM data as in flash (512 + data length); 0 = empty |
@@ -218,7 +218,8 @@ object), a sample slot at most 80 KiB.
 - **Writing.** `BK_PUT` stages one object in RAM; the commit checks the CRC, then the object as a load
   checks it — projects: "JNG1" (or Felucca's FUN3 / FUN2 / FUN1, converted) with its size and sum, stored
   as "JNG1"; banks: magic, record size, slot count, key count (other keys are mapped as at boot);
-  settings: magic, palette, low cut, a permutation of the buttons and knobs — and writes it through the
+  settings: its size (with or without the lights word), magic, palette, low cut, a permutation of the
+  buttons and knobs — and writes it through the
   usual A/B commit (a cut-off restore leaves the old object or the new one, never half). The working
   project (0) is loaded at once instead of written. Every commit needs the song stopped (rc 3): a flash
   erase stops the audio for a moment. The autosave waits while a backup runs.

@@ -3,7 +3,8 @@
 /* Jangada (after SLOOP 2.3 and Felucca 1.0.1): the editor's backup and restore, editor protocol v5,
  * cmds 34-36 (web/EDITOR_PROTOCOL.md). Requests name objects, never flash addresses:
  *   0      the working project (stored as the autosave stores it: "JNG1", project.c)
- *   1      the settings (persist_t "PER2": palette, low cut, the panel calibration)
+ *   1      the settings (persist_t "PER2": palette, low cut, the panel calibration, the lights word;
+ *          a backup of Jangada 0.2, without the lights word, restores too)
  *   2..5   the projects 1..4 ("JNG1"; length 0 = empty)
  *   6..7   the user preset banks (up_bank_t "UPB2", upreset.c; length 0 = empty)
  *   32..34 the user sample slots USR1..3 (header + ADPCM, as in flash; read only here: a restore
@@ -64,6 +65,7 @@ static void ed_bk_settings(persist_t *p)            /* the settings as settings_
     p->lowcut = settings.lowcut;
     p->zoom = settings.zoom;
     p->panel = panel;
+    p->lights = lights_word();
 }
 
 /* object id -> its bytes (*len 0: empty); objects 1..5 are made into proj_io. 0: no such object */
@@ -93,25 +95,6 @@ static const uint8_t *ed_bk_make(uint32_t id, uint32_t *len)
     return ED_BK_RAW;
 }
 
-/* a permutation of the buttons and of the knobs, each knob turning one way (panel_init's ranges) */
-static int ed_bk_panel_ok(const panel_t *q)
-{
-    uint32_t i, b = 0, e = 0;
-    if (q->magic != PANEL_MAGIC)
-        return 0;
-    for (i = 0; i < NB; i++) {
-        if (q->btn[i] >= NB || (b >> q->btn[i]) & 1u)
-            return 0;
-        b |= 1u << q->btn[i];
-    }
-    for (i = 0; i < NE; i++) {
-        if (q->enc[i] >= NE || (e >> q->enc[i]) & 1u || (q->dir[i] != 1 && q->dir[i] != -1))
-            return 0;
-        e |= 1u << q->enc[i];
-    }
-    return 1;
-}
-
 /* the staged object, checked, then written. rc 0 ok, 1 arguments, 2 not a valid object, 3 stop the
  * song first, 4 flash */
 static uint32_t ed_bk_commit(void)
@@ -128,11 +111,12 @@ static uint32_t ed_bk_commit(void)
         proj_apply(&autosave_buf);
         return 0;
     }
-    if (id == 1u) {
+    if (id == 1u) {                                  /* as persist_boot reads it; 0.2's (no lights word) too */
         persist_t p;
-        memcpy(&p, raw, sizeof p);
-        if (n != sizeof p || p.magic != PERSIST_MAGIC || p.palette >= NPALETTES || p.lowcut > 1u || p.zoom > 1u ||
-            !ed_bk_panel_ok(&p.panel))
+        memset(&p, 0, sizeof p);
+        memcpy(&p, raw, n <= sizeof p ? n : sizeof p);
+        if ((n != sizeof p && n != PERSIST_SIZE_V02) || p.magic != PERSIST_MAGIC || p.palette >= NPALETTES ||
+            p.lowcut > 1u || p.zoom > 1u || !panel_valid(&p.panel))
             return 2;
         if (st_save(OBJ_SETTINGS, &p, sizeof p))
             return 4;
@@ -142,6 +126,7 @@ static uint32_t ed_bk_commit(void)
         settings.lowcut = p.lowcut;
         settings.zoom = 0;                           /* (as persist_boot: ZOOM left the menu) */
         panel = p.panel;
+        lights_from_word(p.lights);
         palette_set(settings.palette);
         fx_lowcut = (uint8_t)(settings.lowcut != 0);
         return 0;
@@ -190,7 +175,7 @@ static uint32_t ed_bk_write(const uint8_t *a, uint32_t na)
         if (na != 12u || id > 7u)
             return 1;
         len = ed_bk_r32(a + 2);
-        if (len > ST_PAYLOAD_MAX || (id <= 1u && !len) || (id == 1u && len != sizeof(persist_t)) ||
+        if (len > ST_PAYLOAD_MAX || (id <= 1u && !len) || (id == 1u && len != sizeof(persist_t) && len != PERSIST_SIZE_V02) ||
             ((id == 6u || id == 7u) && len && len != sizeof(up_bank_t)))
             return 1;
         ed_bk_put = 1;

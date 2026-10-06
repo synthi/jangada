@@ -60,7 +60,8 @@ static uint32_t scope_w;
 #define FM1_NCOL 8
 static const int8_t FM1_KEYMAP[6][FM1_NCOL];
 #define FM1_TICKS_PER_US 1
-static uint8_t fm1_led[FM1_NCOL];
+static uint8_t fm1_led[FM1_NCOL], fm1_led_dim[FM1_NCOL], fm1_led_bg[FM1_NCOL];
+static uint16_t fm1_led_bg_ns;
 #include "ui_input.c"
 
 /* the flash: storage.c over a RAM image of the 1 MiB part */
@@ -302,6 +303,7 @@ int main(void)
     settings.palette = 2;
     settings.lowcut = 1;
     panel.dir[EN_K2] = -1;
+    lights_from_word(2u | 1u << 8 | 1u << 11);       /* LIGHTS level 2, NOTES on, USB AUDIO FULL */
     {
         up_rec_t r;
         memset(&r, 0, sizeof r);
@@ -330,8 +332,9 @@ int main(void)
     {
         persist_t p;
         memcpy(&p, obj(1)->data, sizeof p);
-        check("capture: the settings (palette, low cut, the panel calibration)",
-              p.magic == PERSIST_MAGIC && p.palette == 2 && p.lowcut == 1 && p.panel.dir[EN_K2] == -1);
+        check("capture: the settings (palette, low cut, the panel calibration, the lights word)",
+              obj(1)->len == sizeof(persist_t) && p.magic == PERSIST_MAGIC && p.palette == 2 && p.lowcut == 1 &&
+              p.panel.dir[EN_K2] == -1 && p.lights == lights_word());
     }
     {
         uint8_t b[16];
@@ -373,9 +376,10 @@ int main(void)
               project_used(1) && project_used(3) && proj_slot[1].g[G_BPM] == 133 && proj_slot[1].t[0].step[3].note[0] == 67);
     }
     check("restore: the working project is loaded", song.g[G_BPM] == 121 && trk[1].p[P_LEVEL] == 77 && trk[0].step[3].note[0] == 67);
-    check("restore: the settings (palette, low cut, calibration) in use and in flash",
+    check("restore: the settings (palette, low cut, calibration, lights) in use and in flash",
           settings.palette == 2 && settings.lowcut == 1 && fx_lowcut == 1 && panel.dir[EN_K2] == -1 &&
-          persist_saved.palette == 2);
+          persist_saved.palette == 2 && lights_lvl == 2 && lights_notes == 1 && usb_full == 1 &&
+          persist_saved.lights == lights_word());
     {
         char nm[13];
         up_name(17, nm);
@@ -414,6 +418,14 @@ int main(void)
         ((up_bank_t *)(void *)b)->rsize = 192;
         rc = put_all(7, b, src[7].len, st_crc32(b, src[7].len));
         check("a user preset bank of another shape: rc 2", rc == 2 && !erases);
+    }
+    {   /* a backup of Jangada 0.2: the settings without the lights word */
+        lights_from_word(2u);
+        rc = put_all(1, src[1].data, PERSIST_SIZE_V02, st_crc32(src[1].data, PERSIST_SIZE_V02));
+        check("settings of Jangada 0.2 (no lights word): restored, the lights off, stored at today's size",
+              !rc && settings.palette == 2 && lights_lvl == LIGHTS_OFF && !usb_full && persist_saved.lights == lights_word() &&
+              st_load(OBJ_SETTINGS, &persist_saved, sizeof persist_saved) == (int)sizeof(persist_t));
+        erases = 0;
     }
     check("BEGIN with a wrong length (settings, a bank): rc 1",
           put_begin(1, 12, 0) == 1 && put_begin(6, 100, 0) == 1 && put_begin(0, 0, 0) == 1 && put_begin(8, 10, 0) == 1);
