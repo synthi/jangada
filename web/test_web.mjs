@@ -6,17 +6,23 @@
 // - editor.html: the protocol section (between PROTO-BEGIN/END) against its mock device (v1 commands,
 //   the user preset bank / librarian, library files, live pushes, older-firmware fallback, the v3 tracks
 //   and the mixer), its tab layout and ja/en strings,
-//   and the user-sample pipeline byte for byte against tools/sampleio.py
+//   and the user-sample pipeline byte for byte against tools/sampleio.py; the CHOP helpers (hits, TAP snap,
+//   grid, keep / leave out, own lengths, Fit to slot, the slot, WAV and ZIP writers)
 // - fm1pkg.js: productOf and logicalImage on build/felucca.fwsc (skipped without a build)
-// - fm1ota.js: a full install and an unplug during the write against a simulated FM-1
+// - fm1ota.js: a full install and an unplug during the write against a simulated FM-1; the return to the
+//   official V15 (only the exact file; its loader resumed, another firmware's loader never written)
+// - index_pkg.html: every text in pt / en / ja, the script compiles with the modules inlined
+// - fm1backup.js (Jangada, v5): a complete backup of the editor's mock device and its restore into an
+//   empty one, through the editor's own Link (web/test_backup.mjs checks the module alone)
 
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import vm from "node:vm";
-import { logicalImage, productOf } from "./fm1pkg.js";
-import { Updater, pack7, unpack7 } from "./fm1ota.js";
+import { logicalImage, productOf, validateStockPackage, sha256hex, STOCK_V15_SHA256, STOCK_V15_SIZE, STOCK_V15_PRODUCT } from "./fm1pkg.js";
+import { Updater, OUR_LOADER, pack7, unpack7 } from "./fm1ota.js";
+import * as BK from "./fm1backup.js";
 
 let failed = 0;
 const ok = (cond, what) => { console.log(`${what.padEnd(64)} ${cond ? "ok" : "FAIL"}`); if (!cond) failed++; };
@@ -30,8 +36,9 @@ const proto = html.slice(html.indexOf("/*PROTO-BEGIN*/"), html.indexOf("/*PROTO-
 const E = vm.runInNewContext(proto + `
 ;({ frame, unframe, parse, req, Link, parseWav, resample, normalize, rootFromName, buildSlot, makeMockDevice, CMD, SMP,
    UP, bank, capturePatch, auditionPatch, startWatch, libraryFile, readLibraryFile, paramKeys, patternFromSteps, stepsFromPattern, upName,
-   mixer, GM_DRUM, drumName, parseNotes })`,
-{ setTimeout, clearTimeout, setInterval, clearInterval, console });
+   mixer, GM_DRUM, drumName, parseNotes,
+   CHOP, chopNovelty, chopHits, chopSnap, chopGrid, chopEqual, chopList, chopPick, chopFit, chopZones, wavFile, zipStore })`,
+{ setTimeout, clearTimeout, setInterval, clearInterval, console, TextEncoder });
 
 async function editorMock() {
   const m = E.makeMockDevice();
@@ -428,6 +435,55 @@ async function editorTrackParam() {
   o.done();
 }
 
+/* ------------------------------------- v5 (Jangada): backup -> restore --- */
+async function editorBackup() {
+  const A = attachMock({});
+  const info = E.parse[E.CMD.INFO](await A.rq(E.req.info()));
+  ok(info.proto === BK.BACKUP_PROTO, "backup: INFO ends with the protocol version (5)");
+  /* something in every kind of object: projects 2 and 4, a user preset in bank 2, a sample in USR3 */
+  await A.rq(E.req.set(1, 0, 133));
+  await A.rq(E.req.project(1, 1), { timeout: 4000, retries: 0 });
+  await A.rq(E.req.set(1, 0, 97));
+  await A.rq(E.req.project(1, 3), { timeout: 4000, retries: 0 });
+  await A.rq(E.req.set(1, 0, 121));
+  await A.rq(E.req.upStore(20, "BACKUP ME"));
+  const s = Int16Array.from({ length: 4000 }, (_, i) => Math.round(9000 * Math.sin(i / 5)));
+  const { hdr, data } = E.buildSlot("keep", [{ s, root: 60 }]);
+  await A.rq(E.req.smpBegin(2), { timeout: 1000, retries: 0 });
+  for (let off = 0; off < data.length; off += 256) await A.rq(E.req.smpWrite(2, E.SMP.DATA_OFF + off, data.subarray(off, off + 256)), { timeout: 1000 });
+  await A.rq(E.req.smpEnd(2, hdr), { timeout: 2000, retries: 0 });
+  let prog = 0;
+  const file = await BK.captureBackup(A.rq, info.version, (d, n) => { prog = d / n; });
+  const text = JSON.stringify(file, null, 1);
+  ok(file.format === "jangada-backup" && file.objects.length === 11 && prog === 1 && file.objects[3].size > 0 && file.objects[4].size === 0 &&
+     file.objects[7].size > 0 && file.objects[10].size === E.SMP.DATA_OFF + data.length && file.objects[8].size === 0,
+     "backup: the mock FM-1 into one file (11 objects, empty ones as 0)");
+  ok(/^jangada-backup-\d{4}-\d\d-\d\d\.json$/.test(BK.backupName()), "backup: the file is jangada-backup-DATE.json");
+  /* into an empty FM-1: what comes back is what went in */
+  const B = attachMock({});
+  const sent = () => (B.sent[E.CMD.BK_PUT] || 0) + (B.sent[E.CMD.SMP_BEGIN] || 0) + (B.sent[E.CMD.SMP_ERASE] || 0);
+  const damaged = JSON.parse(text); damaged.objects[3].data = damaged.objects[3].data.replace(/^./, (c) => (c === "A" ? "B" : "A"));
+  const refused = await BK.restoreBackup(B.rq, damaged).then(() => null, (e) => e);
+  ok(refused && refused.code === "bkBad" && sent() === 0, "backup: a damaged file is refused before anything is written");
+  const sloop = JSON.parse(text); sloop.format = "sloop-backup";
+  ok(await BK.restoreBackup(B.rq, sloop).then(() => false, (e) => e.code === "bkBad") && sent() === 0, "backup: another firmware's backup is refused");
+  await BK.restoreBackup(B.rq, text);
+  const back = await BK.captureBackup(B.rq, "B");
+  ok(back.objects.every((o, i) => o.crc === file.objects[i].crc && o.data === file.objects[i].data), "backup: restore into an empty FM-1, then a backup of it: the same file");
+  const bpm = E.parse[E.CMD.GET](await B.rq(E.req.get(1, 0))).value;
+  const u = E.parse[E.CMD.UP_GET](await B.rq(E.req.upGet(20)), info);
+  const smp = E.parse[E.CMD.SMP_INFO](await B.rq(E.req.smpInfo()));
+  const pj = E.parse[E.CMD.PROJECT](await B.rq(E.req.project(2, 3)));
+  ok(bpm === 121 && u.used && u.name === "BACKUP ME" && smp.slots[2].zones === 1 && smp.slots[2].name === "KEEP" && pj.used === 1,
+     "backup: the working project, a user preset, a sample and a project are back");
+  /* a song playing on the device (the mock's commit answers 3) / a firmware without the backup */
+  const C = attachMock({ noBackup: true });
+  const ci = E.parse[E.CMD.INFO](await C.rq(E.req.info()));
+  const none = await BK.captureBackup((r, o) => C.rq(r, { ...o, timeout: 60, retries: 0 }), "x").then(() => "ok", (e) => e.message);
+  ok(ci.proto === 0 && /^timeout/.test(none), "backup: firmware without it: INFO has no version, LIST no reply");
+  A.done(); B.done(); C.done();
+}
+
 /* ------------------------------------------------- editor tabs and strings --- */
 function editorTabs() {
   const tabs = [...html.matchAll(/<button role="tab" data-tab="(\w+)"/g)].map((x) => x[1]);
@@ -505,6 +561,80 @@ function samplesMatch() {
   ok(eq(js.hdr, pyHdr) && eq(js.data, pyData), `samples: editor == sampleio.py (${files.length} WAV formats, ${js.data.length} B)`);
 }
 
+/* ------------------------------------------- CHOP (pure helpers; Jangada, after SLOOP 2.3) --- */
+function chopTests() {
+  const R = E.SMP.RATE, N = R * 4;
+  /* a break: 8 hits (kick-like and snare-like, loud and ghost) on a quiet noise floor */
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32) * 2 - 1;
+  const x = new Float64Array(N);
+  for (let i = 0; i < N; i++) x[i] = rnd() * 0.002;
+  const HITS = [0.10, 0.52, 0.93, 1.31, 1.80, 2.26, 2.70, 3.33].map((t) => Math.round(t * R));
+  const AMP = [1, 0.8, 0.25, 0.9, 1, 0.3, 0.85, 0.7];
+  HITS.forEach((h, k) => {
+    for (let i = 0; i < R * 0.3 && h + i < N; i++) {
+      const env = Math.exp(-i / (k % 2 ? 1500 : 3000)) * AMP[k];
+      x[h + i] += env * (k % 2 ? rnd() * 0.8 : Math.sin(2 * Math.PI * 60 * i / R) * 0.9 + rnd() * 0.1);
+    }
+  });
+  const nov = E.chopNovelty(x), hits = E.chopHits(x, nov, 5);
+  const near = (a, b, ms) => Math.abs(a - b) <= ms * R / 1000;
+  ok(hits.length === HITS.length && hits.every((h, i) => near(h, HITS[i] - E.CHOP.PRE, 3)),
+    `chop: hits found (${hits.length} of ${HITS.length}, each within 3 ms of its attack)`);
+  ok(E.chopHits(x, nov, 1).length < HITS.length && E.chopHits(x, nov, 1).length >= 4, "chop: low sensitivity keeps the hard hits only");
+  const late = E.chopSnap(x, nov, HITS[3] + 0.035 * R), early = E.chopSnap(x, nov, HITS[4] - 0.03 * R), none = E.chopSnap(x, nov, 1.1 * R);
+  ok(near(late, HITS[3] - E.CHOP.PRE, 3) && near(early, HITS[4] - E.CHOP.PRE, 3) && none === Math.round(1.1 * R),
+    "chop: a TAP 35 ms late / 30 ms early lands on its hit; away from hits it stays");
+  const grid = E.chopGrid(0, Math.round(R * 60 / 90 * 16), 90, 1);
+  ok(grid.length === 16 && grid[1] === Math.round(R * 60 / 90) && E.chopEqual(100, 900, 4).join() === "100,300,500,700",
+    "chop: grid (16 beats at 90 BPM) and equal parts");
+  const list = E.chopList([10, 50, 400], 1000, 100);
+  ok(list.map((c) => `${c.start}-${c.end}`).join() === "10-50,50-150,400-500", "chop: chops end at the next marker or the max length");
+  const chops = E.chopList(hits, N), zones = E.chopZones(x, chops, 60, 0);
+  const peak = (s) => s.reduce((a, v) => Math.max(a, Math.abs(v)), 0);
+  ok(zones.length === 8 && zones.every((z, i) => z.root === 60 + i && z.lo === z.root && z.hi === z.root && z.s[0] === 0)
+    && Math.abs(peak(zones[2].s) / peak(zones[0].s) - 0.25) < 0.05 && zones[0].fname === "CHOP01_C4.wav" && zones[1].fname === "CHOP02_C#4.wav",
+    "chop: one key each from C4, levels kept (a ghost stays quiet), faded in");
+  const one = E.chopZones(x, chops, 60, 1, 3);
+  ok(one.length === 1 && one[0].root === 60 && one[0].lo === 0 && one[0].hi === 127 && one[0].fname === "CHOP04_C4.wav",
+    "chop: one chop over the whole keyboard");
+  const slot = E.buildSlot("BREAK", zones), v = new DataView(slot.hdr.buffer);
+  ok(slot.hdr[6] === 8 && slot.hdr[32 + 25] === 60 && slot.hdr[32 + 26] === 60 && slot.hdr[32 + 7 * 28 + 25] === 67 && v.getInt16(32 + 20, true) === 60 * 16
+    && slot.data.length <= E.SMP.MAX_DATA, "chop: slot header (8 zones, one key each)");
+  const w = E.parseWav(E.wavFile(zones[1].s));
+  ok(w.sr === R && w.x.length === zones[1].s.length && Math.abs(w.x[100] * 32768 - zones[1].s[100]) < 2, "chop: WAV writer round trip");
+  const dir = mkdtempSync(join(tmpdir(), "jangada-chop-")), zp = join(dir, "c.zip");
+  writeFileSync(zp, E.zipStore(zones.slice(0, 3).map((z) => ({ name: "BREAK/" + z.fname, data: E.wavFile(z.s) }))));
+  const r = py(`import sys, zipfile
+z = zipfile.ZipFile(sys.argv[1]); assert z.testzip() is None
+print(",".join(i.filename + ":" + str(i.file_size) for i in z.infolist()))`, zp).toString().trim();
+  ok(r === zones.slice(0, 3).map((z) => `BREAK/${z.fname}:${44 + z.s.length * 2}`).join(), "chop: ZIP of the WAVs (Python reads it)");
+
+  /* keep / leave out, own lengths, fit: a recording longer than a slot */
+  const opt = [null, { off: true }, { len: 30 }];
+  const kl = E.chopList([10, 50, 400], 1000, 100, opt);
+  ok(kl.map((c) => `${c.start}-${c.end}${c.off ? "x" : ""}/${c.full}`).join() === "10-50/50,50-150x/400,400-430/1000"
+    && E.chopList([10, 400], 1000, 0, [{ len: 9999 }])[0].end === 400,
+    "chop: options (left out, own length over the max, never past the next marker)");
+  const kz = E.chopZones(x, E.chopList(hits, N, 0, [{}, { off: true }, {}, { off: true }]), 60, 0);
+  ok(kz.length === 6 && kz.map((z) => z.root).join() === "60,61,62,63,64,65" && kz[1].fname === "CHOP03_C#4.wav" && kz[2].fname === "CHOP05_D4.wav",
+    "chop: left-out chops: the kept ones on consecutive keys, files keep their numbers");
+  const L = R * 20, long = new Float64Array(L);
+  for (let i = 0; i < L; i++) long[i] = Math.sin(i * 0.05) * 0.5;
+  const marks = E.chopEqual(0, L, 40), room = E.SMP.MAX_DATA * 2;
+  const all = E.chopList(marks, L), pick = E.chopPick(all);
+  ok(pick.length === 16 && pick[15].i === 15 && E.chopPick(all, 1, 7)[0].i === 7, "chop: 40 chops: the first 16 kept go to the slot; mode 1 the selected");
+  const lo = E.chopList(marks, L, 0, marks.map((_, i) => ({ off: i % 4 !== 0 })));   /* keep 10 of 40 (each 0.5 s) */
+  ok(E.chopPick(lo).length === 10 && E.chopFit(E.chopPick(lo), room) === Infinity, "chop: 20 s recording, 10 chops kept: they fit");
+  const many = E.chopPick(E.chopList(marks, L, 0, marks.map((_, i) => ({ off: i >= 16 })))), Lf = E.chopFit(many, room - many.length);
+  const fitted = many.map((c) => ({ ...c, end: Math.min(c.end, c.start + Lf) }));
+  let built = null;
+  try { built = E.buildSlot("LONG", E.chopZones(long, fitted, 60, 0)); } catch (e) { built = null; }
+  ok(Lf < R * 0.5 && Lf > R * 0.4 && built && built.data.length <= E.SMP.MAX_DATA && built.hdr[6] === 16,
+    `chop: Fit to slot: 16 x 0.5 s cut to ${(Lf / R).toFixed(3)} s each, the slot builds`);
+  ok(E.chopFit([{ start: 0, end: 100 }, { start: 0, end: 300 }], 250) === 150, "chop: fit keeps short chops whole, cuts the long ones");
+}
+
 /* ------------------------------------------------------- packages: JS == Python --- */
 async function packages() {
   const pkg = join(HERE, "../build/felucca.fwsc");
@@ -525,8 +655,9 @@ const UPGRADE = [0xF0, 0x22, 0x24, 0x35, 0x7F, 0xF7];
 
 /* an FM-1 on WebMIDI: identity, then "device asks, host answers" reads of the image */
 class FakeFM1 {
-  constructor(image, { unplugAfter = Infinity } = {}) {
+  constructor(image, { unplugAfter = Infinity, loaderIdentity = "ota-FM-1_900", finalIdentity = "FM-1_900" } = {}) {
     this.image = image; this.unplugAfter = unplugAfter; this.served = 0; this.bad = 0;
+    this.loaderIdentity = loaderIdentity; this.finalIdentity = finalIdentity;
     this.access = { inputs: new Map(), outputs: new Map() };
     this.boot("FM-1_015", "FM-1");
   }
@@ -562,8 +693,8 @@ class FakeFM1 {
       this.waiting = null;
       this.served++;
       if (this.served >= this.unplugAfter) { this.input.state = this.output.state = "disconnected"; return; }
-      if (addr === 0xE0000000) setTimeout(() => this.boot("ota-FM-1_900", "Felucca Update"), 300);
-      else if (addr === 0xF0000000) setTimeout(() => this.boot("FM-1_900", "Felucca"), 300);
+      if (addr === 0xE0000000) setTimeout(() => this.boot(this.loaderIdentity, "FM-1 Update"), 300);
+      else if (addr === 0xF0000000) setTimeout(() => this.boot(this.finalIdentity, "Jangada"), 300);
       else this.next();
     }
   }
@@ -599,6 +730,61 @@ async function updater() {
   ok(e && e.code === "lost", "fm1ota.js: unplugged in step 1 -> error code 'lost'");
   const e2 = await new Updater({ inputs: new Map(), outputs: new Map() }).install(image, "FM-1_900").then(() => null, (x) => x);
   ok(e2 && e2.code === "notfound", "fm1ota.js: no device -> error code 'notfound'");
+
+  /* the return to the official V15 (Jangada, after Felucca 1.0 / SLOOP 2.3) */
+  ok(OUR_LOADER({ text: "ota-FM-1_900" }) && !OUR_LOADER({ text: "ota-FM-1_015" }), "fm1ota.js: our loader is ota-FM-1_9XX");
+  const foreign = new FakeFM1(image);
+  foreign.boot("ota-FM-1_015", "FM-1 Update");
+  const e3 = await new Updater(foreign.access).resume(image).then(() => null, (x) => x);
+  ok(e3 && e3.code === "foreign" && e3.detail === "ota-FM-1_015" && foreign.served === 0, "fm1ota.js: another firmware's loader is never resumed by Install ('foreign')");
+  const back = new FakeFM1(image, { finalIdentity: "FM-1_015" });
+  back.boot("ota-FM-1_015", "FM-1 Update");
+  const st = [];
+  const r4 = await new Updater(back.access).resume(image, (k) => st.push(k), { product: "FM-1_015" });
+  ok(r4 === true && back.bad === 0 && st.at(-1) === "done", "fm1ota.js: return to official interrupted: its loader resumed, V15 checked when back");
+  const wrong = new FakeFM1(image, { finalIdentity: "FM-1_900" });
+  wrong.boot("ota-FM-1_015", "FM-1 Update");
+  const e5 = await new Updater(wrong.access).resume(image, null, { product: "FM-1_015" }).then(() => null, (x) => x);
+  ok(e5 && e5.code === "mismatch", "fm1ota.js: return to official: another firmware coming back is not 'done'");
+  const e6 = await validateStockPackage(new Uint8Array(STOCK_V15_SIZE)).then(() => null, (x) => x);
+  ok(e6 && /official FM-1 V15/.test(e6.message), "fm1pkg.js: a file of the V15's size that is not it is refused (SHA-256)");
+  /* the official file itself, when it is on this computer (FM1_STOCK=path, or the usual places) */
+  const cand = [process.env.FM1_STOCK, ...Array.from({ length: 7 }, (_, k) => join(HERE, "../".repeat(k + 1), "firmware/FM-1_v15_oficial.fwsc")),
+    join(process.env.HOME || "", ".local/share/jangada/FM-1_V15_oficial.fwsc")].filter((f) => f && existsSync(f));
+  if (!cand.length) { console.log("fm1pkg.js: official V15 file not found: its checks skipped (FM1_STOCK=path)"); return; }
+  const raw = new Uint8Array(readFileSync(cand[0]));
+  const sv = await validateStockPackage(raw);
+  const bent = raw.slice(); bent[123456] ^= 1;
+  const e7 = await validateStockPackage(bent).then(() => null, (x) => x);
+  ok(sv.product === STOCK_V15_PRODUCT && (await sha256hex(raw)) === STOCK_V15_SHA256 && eq(sv.image, logicalImage(raw)) && e7,
+    "fm1pkg.js: the official V15 file is accepted, one byte changed is not");
+  const fm = new FakeFM1(sv.image, { loaderIdentity: "ota-FM-1_015", finalIdentity: "FM-1_015" });
+  fm.boot("FM-1_900", "Jangada");
+  const sst = [];
+  const sgot = await new Updater(fm.access).install(sv.image, sv.product, (k) => sst.push(k));
+  ok(sgot === "FM-1_015" && fm.bad === 0 && sst.at(-1) === "done", "fm1ota.js: Jangada -> official V15 (the official loader, FM-1_015 when back)");
+}
+
+/* ------------------------------------------------------ installer page --- */
+function installerPage() {
+  const page = readFileSync(join(HERE, "index_pkg.html"), "utf8");
+  const tb = page.slice(page.indexOf("const TEXT = {"), page.indexOf("\n};", page.indexOf("const TEXT = {")) + 2);
+  const TEXT = vm.runInNewContext(tb.replace("const TEXT =", "(") + ")");
+  const keys = (l) => new Set(Object.keys(TEXT[l]).filter((k) => k !== "other"));
+  const pt = keys("pt"), en = keys("en"), ja = keys("ja");
+  const used = new Set([...page.matchAll(/data-t="(\w+)"|\bt\("(\w+)"\)|sayK\("(\w+)"/g)].map((x) => x[1] || x[2] || x[3]));
+  const miss = [...used].filter((k) => !pt.has(k) || !en.has(k) || !ja.has(k));
+  const odd = [...pt].filter((k) => !en.has(k) || !ja.has(k)).concat([...en, ...ja].filter((k) => !pt.has(k)));
+  ok(!miss.length && !odd.length, `installer: every text in pt, en and ja (${used.size} used${miss.length ? ", missing " + miss : ""}${odd.length ? ", not in all " + odd : ""})`);
+  const visible = Object.values(TEXT).flatMap((o) => Object.values(o)).join(" ");
+  ok(!/sloop|felucca/i.test(visible) && /Jangada/.test(page.slice(0, page.indexOf("<script"))), "installer: Jangada's name in the texts (no other firmware's)");
+  const strip = (f) => readFileSync(join(HERE, f), "utf8").replace(/^export\s+/gm, "").replace(/^import .*?;\n/gm, "");
+  const script = page.slice(page.indexOf('<script type="module">') + 22, page.lastIndexOf("</script>"))
+    .replace("/*LIB*/", ["fm1pkg.js", "fm1ota.js", "fm1backup.js"].map(strip).join("\n")).replace("/*META*/", "{}");
+  let err = null;
+  try { new vm.SourceTextModule(script); } catch (e) { err = e.message; }
+  if (err && /SourceTextModule/.test(err)) { try { new vm.Script(`(async () => {${script}\n})`); err = null; } catch (e) { err = e.message; } }
+  ok(!err, "installer: the page script compiles (fm1pkg.js, fm1ota.js, fm1backup.js inlined)" + (err ? ` (${err})` : ""));
 }
 
 await editorMock();
@@ -607,10 +793,13 @@ await editorLive();
 await editorTracks();
 await editorMixer();
 await editorTrackParam();
+await editorBackup();
+chopTests();
 editorTabs();
 editorIcons();
 samplesMatch();
 await packages();
 await updater();
+installerPage();
 console.log(failed ? `WEB TESTS FAILED (${failed})` : "web tests passed");
 process.exit(failed ? 1 : 0);

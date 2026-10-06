@@ -36,6 +36,9 @@ run "flash storage (A/B, torn writes)" "$OUT/storage_test"
 $CC -o "$OUT/upreset_test" tests/upreset_test.c
 run "user presets (UP_PUT parser, bank round trip, versions)" "$OUT/upreset_test"
 
+$CC -w -Ibuild/gen -Ifirmware/src -o "$OUT/backup_test" tests/backup_test.c -lm
+run "backup / restore: editor protocol v5 against simulated flash (Jangada)" "$OUT/backup_test"
+
 $CC -o "$OUT/midi_uart_test" tests/midi_uart_test.c
 run "TRS MIDI parser" "$OUT/midi_uart_test"
 
@@ -108,6 +111,7 @@ run "installer CLI (fm1_install.py) against a simulated FM-1" python3 tests/inst
 
 if command -v node >/dev/null 2>&1; then
     run "web pages: editor protocol, samples, packages, update protocol" node web/test_web.mjs
+    run "web backup module (fm1backup.js, Jangada)" node web/test_backup.mjs
 else
     echo "== skip web tests (no node)"
 fi

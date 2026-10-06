@@ -5,8 +5,8 @@
 
   index.html                  redirect to the installer
   firmware/jangada-VER.fwsc   the package
-  webapp/installer/index.html index_pkg.html with fm1pkg.js, fm1ota.js and the metadata inlined
-  webapp/editor/index.html    editor.html (+ fukiai.ttf, FUKIAI-LICENSE.txt)
+  webapp/installer/index.html index_pkg.html with fm1pkg.js, fm1ota.js, fm1backup.js and the metadata inlined
+  webapp/editor/index.html    editor.html (+ fukiai.ttf, FUKIAI-LICENSE.txt, fm1backup.js: the editor imports it)
   src/                        not touched
 
   web/make_site.py build/jangada-X.Y.fwsc X.Y OUT_DIR
@@ -44,7 +44,8 @@ def main(pkg, version, out):
         raise SystemExit(f"{pkg}: no Felucca update loader in it")
     html = (HERE / "index_pkg.html").read_text(encoding="utf-8")
     lib = strip_module((HERE / "fm1pkg.js").read_text(encoding="utf-8")) + "\n" + \
-        strip_module((HERE / "fm1ota.js").read_text(encoding="utf-8"))
+        strip_module((HERE / "fm1ota.js").read_text(encoding="utf-8")) + "\n" + \
+        strip_module((HERE / "fm1backup.js").read_text(encoding="utf-8"))
     name = f"jangada-{re.sub(r'[^A-Za-z0-9.-]', '-', version)}.fwsc"
     meta = json.dumps({"version": version, "product": product, "pkg": "../../firmware/" + name})
     for mark in ("/*LIB*/", "/*META*/"):
@@ -59,13 +60,13 @@ def main(pkg, version, out):
     (inst / "index.html").write_text(html, encoding="utf-8")
     shutil.copy(pkg, fw / name)
     shutil.copy(HERE / "editor.html", ed / "index.html")
-    for f in ("fukiai.ttf", "FUKIAI-LICENSE.txt"):
+    for f in ("fukiai.ttf", "FUKIAI-LICENSE.txt", "fm1backup.js"):
         if (HERE / f).exists():
             shutil.copy(HERE / f, ed / f)
     (out / "index.html").write_text(
-        '<!doctype html><meta charset="utf-8"><title>Felucca</title>'
+        '<!doctype html><meta charset="utf-8"><title>Jangada</title>'
         '<meta http-equiv="refresh" content="0; url=webapp/installer/">'
-        '<a href="webapp/installer/">Felucca installer</a>\n', encoding="utf-8")
+        '<a href="webapp/installer/">Jangada installer</a>\n', encoding="utf-8")
     print(f"site: {out}: webapp/installer ({len(html)} B), webapp/editor, firmware/{name} ({len(raw)} B, {product})")
 
 

@@ -24,6 +24,8 @@
   .small { color: var(--dim); font-size: 13px; }
   progress { width: 100%; height: 4px; margin-top: 16px; }
   pre { color: var(--dim); font-size: 12px; white-space: pre-wrap; margin-top: 16px; }
+  details { margin: 24px 0 16px; } summary { cursor: pointer; font-weight: 600; margin-bottom: 12px; }
+  input[type=file] { font: inherit; font-size: 13px; color: var(--fg); max-width: 100%; }
 </style>
 </head>
 <body>
@@ -36,13 +38,22 @@
   <p class="small" data-t="beta"></p>
   <p class="small"><span data-t="brick"></span>
     <a href="https://github.com/kurogedelic/FM-1-transporter" target="_blank" rel="noopener" style="color:inherit">FM-1-transporter</a></p>
-  <p class="small" data-t="back"></p>
-  <p class="small"><a href="https://www.m-vave.com/download" target="_blank" rel="noopener" style="color:inherit">www.m-vave.com/download</a></p>
   <p><button id="go" disabled data-t="install"></button></p>
   <progress id="bar" max="100" value="0"></progress>
   <p id="status"></p>
   <pre id="log"></pre>
   <p><a href="../editor/" style="color:inherit" data-t="editor"></a></p>
+  <!-- back to the official firmware (after Felucca 1.0 / SLOOP 2.3): the exact official file, a backup first -->
+  <details id="stock">
+    <summary data-t="stockTitle"></summary>
+    <p class="small" data-t="stockHelp"></p>
+    <p class="small"><a href="https://www.m-vave.com/download" target="_blank" rel="noopener" style="color:inherit">www.m-vave.com/download</a></p>
+    <p class="small"><label><span data-t="stockFile"></span><br><input id="stock-file" type="file" accept=".fwsc"></label></p>
+    <p class="small" data-t="stockBackup"></p>
+    <p class="small"><label><input id="stock-skip" type="checkbox"> <span data-t="stockSkip"></span></label></p>
+    <p><button id="stock-go" disabled data-t="stockGo"></button></p>
+    <p class="small" data-t="back"></p>
+  </details>
   <p class="small">Jangada, a fork of Felucca by Leo Kuroshita (@kurogedelic), <a href="https://hugelton.com" target="_blank" rel="noopener" style="color:inherit">Hügelton Instruments</a>, with parts of <a href="https://github.com/isod89/sloop-fm1" target="_blank" rel="noopener" style="color:inherit">SLOOP</a> (isod89) and msfa / Dexed (FM6, Apache-2.0).<br>
     Font: Inter Tight (The Inter Project Authors, SIL OFL 1.1). Icons: Fukiai (Hügelton Instruments, MIT). Samples: Versilian Studios VSCO-2 Community Edition and VCSL (CC0 1.0), and the Hügelton Sample Pack (© Hügelton Instruments, not CC0).<br>
     Test build. M-VAVE and FM-1 are trademarks of their respective owners.<br>
@@ -60,7 +71,6 @@ const TEXT = {
     direct: "Ligue o cabo USB direto no computador (um cabo de dados). Não precisa de Probe nem Transporter.",
     brick: "Se a instalação falhar: segure OCT− ao ligar o FM-1 (resgate por USB) e instale de novo. Se nem isso ligar, a recuperação precisa de um Transporter:",
     beta: "Versão alfa, pode ser instável. O autor não se responsabiliza se o seu FM-1 for danificado ou se comportar mal por causa deste firmware alternativo. Use por sua conta e risco.",
-    back: "Para voltar ao firmware oficial: o atualizador da M-VAVE, M-UPGRADE (Downloads → PC Software → M-UPGRADE), e o firmware oficial (PC Firmware → FM-1 V15). No Linux: ./instalar-linux.sh --original.",
     nomidi: "Este navegador não consegue. Abra a página no Chrome ou no Edge.", loadfail: "Não foi possível carregar: ",
     start: "Começando", verify: "Conferindo", loader: "Entrando no modo de atualização", write: "Gravando",
     reboot: "Reiniciando", done: "Pronto", stopped: "Parou. Reconecte o cabo USB e aperte Instalar de novo.",
@@ -74,6 +84,24 @@ const TEXT = {
     mismatch: "Gravado, mas o FM-1 informa outra versão: ",
     badpkg: "O arquivo de instalação está danificado. Recarregue a página.",
     leave: "Gravando. Não feche a página.",
+    foreign: "O FM-1 está no modo de atualização de outro firmware. Termine essa atualização com o atualizador dele (M-UPGRADE, ou \"Voltar ao firmware oficial\" abaixo) e aperte Instalar de novo: ",
+    back: "O atualizador da M-VAVE, M-UPGRADE (Downloads → PC Software), também serve. No Linux: ./instalar-linux.sh --original. Se o FM-1 não for encontrado, feche os outros programas e abas do navegador que usam MIDI.",
+    stockTitle: "Voltar ao firmware oficial (V15)",
+    stockHelp: "Baixe o FM-1 V15 oficial no site da M-VAVE (PC Firmware → FM-1 V15) e escolha o FM-1.fwsc que vem nele, sem modificar. O arquivo é conferido aqui no navegador; não é enviado para lugar nenhum.",
+    stockFile: "O FM-1.fwsc oficial",
+    stockBackup: "O firmware oficial não abre as músicas, projetos e samples da Jangada. Antes de gravar, a página salva um backup completo do FM-1 neste computador (jangada-backup-DATA.json). Para tê-los de volta: reinstale a Jangada e restaure o backup pelo editor (Projetos → Backup).",
+    stockSkip: "Já tenho um backup (ou não preciso): seguir sem salvar outro",
+    stockGo: "Fazer o backup e instalar o V15 oficial",
+    stockValid: "V15 oficial conferido", stockBad: "Este não é o FM-1.fwsc oficial do V15 sem modificações. Escolha o arquivo baixado da M-VAVE.",
+    stockBacking: "Salvando o backup ", stockSaved: "Backup salvo: ",
+    stockConfirm: "Instalar o V15 oficial no FM-1? As músicas da Jangada não abrem no firmware oficial.",
+    stockConfirmSaved: "O backup foi salvo neste computador (pasta de downloads). Instalar agora o V15 oficial no FM-1?",
+    stockFinish: "O FM-1 está no modo de atualização da Jangada. Aperte Instalar para terminar a atualização da Jangada primeiro; depois volte ao V15 oficial.",
+    stockNeedBackup: "O FM-1 está no modo de atualização: daqui não dá para fazer backup. Se você já tem um backup, marque \"Já tenho um backup\" e aperte de novo para terminar a volta ao oficial.",
+    stockUnsupported: "Este firmware não tem o backup completo (Jangada 0.2 em diante). Atualize a Jangada primeiro, ou marque \"Já tenho um backup\" para seguir sem ele.",
+    stockNoJangada: "A Jangada não foi encontrada para o backup (o FM-1 roda outro firmware?). Marque \"Já tenho um backup\" para seguir sem ele.",
+    bkStop: "Pare a música no FM-1 (PLAY) e tente de novo.", bkStale: "O FM-1 mudou durante o backup; tente de novo: ",
+    bkRead: "Erro ao ler o backup: ", bkFlash: "Erro de flash: ", bkBad: "Backup inválido: ",
     license: "GPL-3.0, sem garantia. Código-fonte:",
   },
   ja: {
@@ -84,7 +112,6 @@ const TEXT = {
     direct: "USB ケーブルはパソコンに直接つないでください。Probe や Transporter などの機材は不要です。",
     brick: "万一インストールに失敗して起動しなくなった場合は、復旧に Transporter が必要です:",
     beta: "これはベータ版で、不安定な場合があります。このカスタムファームウェアを使ったことで FM-1 が壊れたり不具合が起きたりしても、作者は一切の責任を負いません。自己責任でお使いください。",
-    back: "公式ファームウェアに戻すには、M-VAVE 公式のアップデーター M-UPGRADE（Downloads → PC Software → M-UPGRADE）と公式ファームウェア（PC Firmware → FM-1 V15）が必要です。",
     nomidi: "このブラウザでは使えません。Chrome か Edge で開いてください。", loadfail: "読み込めませんでした: ",
     start: "開始します", verify: "確認中", loader: "書き込みモードに切り替え中", write: "書き込み中",
     reboot: "再起動中", done: "完了しました", stopped: "途中で止まりました。USB を挿し直してもう一度押してください。",
@@ -98,6 +125,24 @@ const TEXT = {
     mismatch: "書き込みは終わりましたが、FM-1 が別のバージョンを報告しています: ",
     badpkg: "インストールするファイルが壊れています。ページを再読み込みしてください。",
     leave: "書き込み中です。ページを閉じないでください。",
+    foreign: "FM-1 は別のファームウェアの書き込みモードです。そのアップデーター（M-UPGRADE、または下の「公式ファームウェアに戻す」）で書き込みを終えてから、もう一度インストールしてください: ",
+    back: "M-VAVE のアップデーター M-UPGRADE（Downloads → PC Software）でも戻せます。Linux では ./instalar-linux.sh --original。FM-1 が見つからない場合は、MIDI を使う他のアプリとブラウザのタブを閉じてください。",
+    stockTitle: "公式ファームウェア（V15）に戻す",
+    stockHelp: "M-VAVE のサイトから公式の FM-1 V15 をダウンロードし（PC Firmware → FM-1 V15）、中の FM-1.fwsc（変更していないもの）を選んでください。ファイルはこのブラウザの中で確認され、どこにも送られません。",
+    stockFile: "公式の FM-1.fwsc",
+    stockBackup: "公式ファームウェアは Jangada の曲・プロジェクト・サンプルを開けません。書き込む前に、このページが FM-1 の全体バックアップをこのパソコンに保存します（jangada-backup-日付.json）。元に戻すには、Jangada を入れ直してエディタから復元します（Projects → Backup）。",
+    stockSkip: "バックアップはもうある（または不要）: 保存せずに進む",
+    stockGo: "バックアップして公式 V15 をインストール",
+    stockValid: "公式 V15 を確認しました", stockBad: "変更されていない公式 V15 の FM-1.fwsc ではありません。M-VAVE からダウンロードしたファイルを選んでください。",
+    stockBacking: "バックアップを保存中 ", stockSaved: "バックアップを保存しました: ",
+    stockConfirm: "FM-1 に公式 V15 をインストールしますか？ Jangada の曲は公式ファームウェアでは開けません。",
+    stockConfirmSaved: "バックアップをこのパソコン（ダウンロードフォルダ）に保存しました。公式 V15 を FM-1 にインストールしますか？",
+    stockFinish: "FM-1 は Jangada の書き込みモードです。先に「インストール」で Jangada の書き込みを終えてから、公式 V15 に戻してください。",
+    stockNeedBackup: "FM-1 は書き込みモードのため、ここからはバックアップできません。バックアップがすでにあれば「バックアップはもうある」にチェックして、もう一度押してください。",
+    stockUnsupported: "このファームウェアは全体バックアップに対応していません（Jangada 0.2 以降）。先に Jangada を更新するか、「バックアップはもうある」にチェックしてください。",
+    stockNoJangada: "バックアップ用の Jangada が見つかりません（FM-1 は別のファームウェア？）。「バックアップはもうある」にチェックすると進めます。",
+    bkStop: "FM-1 の再生（PLAY）を止めてから、もう一度押してください。", bkStale: "バックアップ中に FM-1 の内容が変わりました。もう一度: ",
+    bkRead: "バックアップの読み取りエラー: ", bkFlash: "フラッシュのエラー: ", bkBad: "バックアップが不正です: ",
     license: "GPL-3.0、無保証。ソース:",
   },
   en: {
@@ -108,7 +153,6 @@ const TEXT = {
     direct: "Connect the USB cable directly to the computer. No probe or Transporter is needed.",
     brick: "If an install fails: hold OCT− while switching the FM-1 on (USB rescue) and install again. If even that does not start, recovering it needs a Transporter:",
     beta: "This is a beta and may be unstable. The author accepts no responsibility if your FM-1 is damaged or misbehaves because of this custom firmware. Use it at your own risk.",
-    back: "To go back to the official firmware you need M-VAVE's official updater, M-UPGRADE (Downloads → PC Software → M-UPGRADE), and the official firmware (PC Firmware → FM-1 V15).",
     nomidi: "This browser cannot do it. Open the page in Chrome or Edge.", loadfail: "Could not load: ",
     start: "Starting", verify: "Verifying", loader: "Switching to update mode", write: "Writing",
     reboot: "Restarting", done: "Done", stopped: "Stopped. Replug the USB cable and press Install again.",
@@ -122,6 +166,24 @@ const TEXT = {
     mismatch: "Written, but the FM-1 reports another version: ",
     badpkg: "The file to install is damaged. Reload the page.",
     leave: "Writing. Do not close the page.",
+    foreign: "The FM-1 is in the update mode of another firmware. Finish that update with its own updater (M-UPGRADE, or \"Return to the official firmware\" below), then press Install again: ",
+    back: "M-VAVE's own updater, M-UPGRADE (Downloads → PC Software), works too. On Linux: ./instalar-linux.sh --original. If the FM-1 is not found, close every other app and browser tab that uses MIDI.",
+    stockTitle: "Return to the official firmware (V15)",
+    stockHelp: "Download the official FM-1 V15 from M-VAVE (PC Firmware → FM-1 V15) and select the FM-1.fwsc inside it, unmodified. The file is checked in this browser; it is not sent anywhere.",
+    stockFile: "The official FM-1.fwsc",
+    stockBackup: "The official firmware cannot open Jangada's music, projects or samples. Before writing, this page saves a complete backup of the FM-1 on this computer (jangada-backup-DATE.json). To get them back: reinstall Jangada and restore the backup from the editor (Projects → Backup).",
+    stockSkip: "I already have a backup (or do not need one): go on without saving another",
+    stockGo: "Back up and install the official V15",
+    stockValid: "Official V15 verified", stockBad: "This is not the unmodified official V15 FM-1.fwsc. Select the file downloaded from M-VAVE.",
+    stockBacking: "Saving the backup ", stockSaved: "Backup saved: ",
+    stockConfirm: "Install the official V15 on the FM-1? The official firmware cannot open Jangada's music.",
+    stockConfirmSaved: "The backup is saved on this computer (the downloads folder). Install the official V15 on the FM-1 now?",
+    stockFinish: "The FM-1 is in Jangada's update mode. Press Install to finish the Jangada update first, then return to the official V15.",
+    stockNeedBackup: "The FM-1 is in update mode: no backup can be made from there. If you already have a backup, tick \"I already have a backup\" and press again to finish the return to the official firmware.",
+    stockUnsupported: "This firmware has no complete backup (Jangada 0.2 and later). Update Jangada first, or tick \"I already have a backup\" to go on without it.",
+    stockNoJangada: "Jangada was not found for the backup (does the FM-1 run another firmware?). Tick \"I already have a backup\" to go on without it.",
+    bkStop: "Stop the music on the FM-1 (PLAY) and try again.", bkStale: "The FM-1 changed during the backup; try again: ",
+    bkRead: "Backup read error: ", bkFlash: "Flash error: ", bkBad: "Invalid backup: ",
     license: "GPL-3.0, no warranty. Source:",
   },
 };
@@ -145,8 +207,30 @@ const log = (t) => { $("log").textContent += t + "\n"; };
 let image = null;
 const meta = /*META*/;
 
-let writing = false;
+let writing = false, stock = null, stockEpoch = 0;
+const lockAll = (on) => {
+  writing = on;
+  $("go").disabled = on || !image;
+  $("stock-go").disabled = on || !stock;
+  $("stock-file").disabled = on;
+  $("stock-skip").disabled = on;
+};
 window.addEventListener("beforeunload", (e) => { if (writing) { e.preventDefault(); e.returnValue = t("leave"); } });
+const total = 74 + 1167;
+const step = (k, a) => {
+  log(`${k} ${a ?? ""}`);
+  if (k === "start") sayK("start");
+  if (k === "verify") { sayK("verify"); $("bar").value = Math.min(100, (a / total) * 100); }
+  if (k === "loader") sayK("loader");
+  if (k === "write") { sayK("write"); $("bar").value = Math.min(100, ((74 + a) / total) * 100); }
+  if (k === "reboot") sayK("reboot");
+  if (k === "done") { $("bar").value = 100; sayK("done"); }
+};
+const failed = (e) => {
+  if (e && e.code && TEXT[lang][e.code]) sayK(e.code, e.code === "bkStop" ? "" : e.detail || (/^bk/.test(e.code) ? e.message : ""));
+  else sayK("error", e && e.message);
+  log(String(e && e.stack || e));
+};
 
 (async () => {
   if (!navigator.requestMIDIAccess) { sayK("nomidi"); return; }
@@ -157,42 +241,95 @@ window.addEventListener("beforeunload", (e) => { if (writing) { e.preventDefault
     if (productOf(pkg) !== meta.product) { sayK("badpkg"); return; }
     image = logicalImage(pkg);
     say(`Jangada ${meta.version}`);
-    $("go").disabled = false;
+    lockAll(writing);
   } catch (e) { sayK("loadfail", e.message); }
 })();
 
 $("go").addEventListener("click", async () => {
-  $("go").disabled = true;
+  if (writing) return;
+  lockAll(true);
   let midi;
   try { midi = await navigator.requestMIDIAccess({ sysex: true }); }
-  catch (e) { sayK("denied"); $("go").disabled = false; return; }
-  writing = true;
+  catch (e) { sayK("denied"); lockAll(false); return; }
   try {
     const up = new Updater(midi, log);
-    const total = 74 + 1167;
-    const step = (k, a) => {
-      log(`${k} ${a ?? ""}`);
-      if (k === "start") sayK("start");
-      if (k === "verify") { sayK("verify"); $("bar").value = (a / total) * 100; }
-      if (k === "loader") sayK("loader");
-      if (k === "write") { sayK("write"); $("bar").value = ((74 + a) / total) * 100; }
-      if (k === "reboot") sayK("reboot");
-      if (k === "done") { $("bar").value = 100; sayK("done"); }
-    };
     const ota = await up.find((id) => /^ota-/i.test(id.model));
     if (ota) {
       ota.link.close();
-      sayK((await up.resume(image, step)) ? "done" : "stopped");
+      sayK((await up.resume(image, step)) ? "done" : "stopped");   /* (another firmware's loader: "foreign") */
     } else {
       await up.install(image, meta.product, step);
     }
-  } catch (e) {
-    if (e && e.code && TEXT[lang][e.code]) sayK(e.code, e.detail || "");
-    else sayK("error", e && e.message);
-    log(String(e && e.stack || e));
-  }
-  writing = false;
-  $("go").disabled = false;
+  } catch (e) { failed(e); }
+  lockAll(false);
+});
+
+/* back to the official V15 (after Felucca 1.0 / SLOOP 2.3): only the exact official file (SHA-256), a complete
+   backup first (fm1backup.js, through the running Jangada), then the same update path as M-UPGRADE. A device
+   left in the official loader's update mode is finished; one in Jangada's must finish Jangada first. */
+function saveFile(name, obj) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(obj, null, 1)], { type: "application/json" }));
+  a.download = name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+/* the running Jangada's complete backup, saved on this computer -> true; false: refused (said why) */
+async function stockBackup(midi) {
+  const isJ = (p) => /jangada|felucca/i.test(p.name || "") && p.state !== "disconnected";
+  const input = [...midi.inputs.values()].find(isJ), output = [...midi.outputs.values()].find(isJ);
+  if (!input || !output) { sayK("stockNoJangada"); return false; }
+  try { await input.open(); await output.open(); } catch (e) { /* opened on first use */ }
+  const link = new BackupConnection(input, output);
+  try {
+    const info = await link.info();
+    if (info.proto < BACKUP_PROTO) { sayK("stockUnsupported"); return false; }
+    const file = await captureBackup((r, o) => link.request(r, o), info.version, (d, n) => {
+      $("bar").value = (100 * d) / n;
+      sayK("stockBacking", `${Math.round((100 * d) / n)} %`);
+    });
+    const name = backupName();
+    saveFile(name, file);
+    sayK("stockSaved", name);
+    log(`backup ${name}: ${file.objects.map((o) => o.size).join(" ")}`);
+    return true;
+  } finally { link.close(); }
+}
+$("stock-file").addEventListener("change", async () => {
+  const epoch = ++stockEpoch, f = $("stock-file").files[0];
+  stock = null;
+  lockAll(writing);
+  if (!f) return;
+  try {
+    const v = await validateStockPackage(new Uint8Array(await f.arrayBuffer()));
+    if (epoch !== stockEpoch) return;
+    stock = v;
+    sayK("stockValid");
+  } catch (e) { if (epoch === stockEpoch) { sayK("stockBad"); log(e.message); }; }
+  lockAll(writing);
+});
+$("stock-go").addEventListener("click", async () => {
+  if (writing || !stock) return;
+  const target = stock, skip = $("stock-skip").checked;
+  lockAll(true);
+  let midi;
+  try { midi = await navigator.requestMIDIAccess({ sysex: true }); }
+  catch (e) { sayK("denied"); lockAll(false); return; }
+  try {
+    const up = new Updater(midi, log);
+    const ota = await up.find((id) => /^ota-/i.test(id.model));
+    if (ota) {
+      ota.link.close();
+      if (OUR_LOADER(ota.id)) sayK("stockFinish");     /* Jangada's loader: finish Jangada first (Install) */
+      else if (!skip) sayK("stockNeedBackup");
+      else if (confirm(t("stockConfirm"))) sayK((await up.resume(target.image, step, { product: target.product })) ? "done" : "stopped");
+    } else if (skip ? confirm(t("stockConfirm")) : (await stockBackup(midi)) && confirm(t("stockConfirmSaved"))) {
+      await up.install(target.image, target.product, step);
+    }
+  } catch (e) { failed(e); }
+  lockAll(false);
 });
 </script>
 </body>
