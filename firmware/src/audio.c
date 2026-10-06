@@ -40,55 +40,27 @@ static void audio_block(int32_t *out, uint32_t n)       /* mix (fx.c), then Q15 
     }
 }
 
-/* overload: a half that took > 85 % of its time sheds one voice before the
- * next one, over all parts: the quietest releasing voice fades out over the next
- * block (voice_kill), else the oldest held one goes into its release (stopped by
- * a later shed if still needed). The only held voice is never touched, so a dense
- * chord on a heavy engine thins out instead of starving the CPU. */
+/* overload: two halves in a row over 85 % of their time ask for one voice to be shed before the next
+ * one (shed_voice, voice.c: a fade, never a part's bass or lead) */
 static volatile uint8_t shed_req;
-static uint32_t shed_count;
+static uint8_t shed_over;                      /* bit k: the half k halves ago was over 85 % */
+
+static void shed_late(uint32_t us)             /* end of a half: us = its time, as the deadline sees it */
+{
+    shed_over = (uint8_t)(shed_over << 1 | (us * 100u > (HALF_FRAMES * 1000000u / FS) * 85u));
+    if ((shed_over & 3u) == 3u)
+        shed_req = 1;                          /* two in a row */
+}
 
 #if FELUCCA_UAC
 /* end of a half: all = its ticks, TIMER5 nested in it included (main.c). The deadline (the shed) sees
  * both; the load figures get the render alone, in us (out of line: the ISR's loops stay as they were) */
 static __attribute__((noinline)) uint32_t shed_check(uint32_t all)
 {
-    if (all / FM1_TICKS_PER_US * 100u > (HALF_FRAMES * 1000000u / FS) * 85u)
-        shed_req = 1;
+    shed_late(all / FM1_TICKS_PER_US);
     return (all - t5_nested_ticks) / FM1_TICKS_PER_US;
 }
 #endif
-
-static void shed_voice(void)
-{
-    uint32_t p, i, ngate = 0;
-    voice_t *best = 0;
-    for (p = 0; p < NTRK; p++)
-        for (i = 0; i < NVOICE && trk_synth(p); i++) {
-            voice_t *v = &trk[p].v[i];
-            if (v->active && !v->gate && v->stage != 4u && (!best || v->env < best->env))
-                best = v;
-        }
-    if (best) {
-        voice_kill(best);
-        shed_count++;
-        return;
-    }
-    for (p = 0; p < NTRK; p++)
-        for (i = 0; i < NVOICE && trk_synth(p); i++) {
-            voice_t *v = &trk[p].v[i];
-            if (v->active && v->gate) {
-                ngate++;
-                if (!best || v->age < best->age)
-                    best = v;
-            }
-        }
-    if (ngate > 1u) {
-        best->gate = 0;
-        best->stage = 3;
-        shed_count++;
-    }
-}
 
 void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) */
 {
@@ -128,8 +100,7 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
         us = (fm1_ticks() - t0) / FM1_TICKS_PER_US;
         if (us > audio_max_us)
             audio_max_us = us;
-        if (us * 100u > (HALF_FRAMES * 1000000u / FS) * 85u)
-            shed_req = 1;
+        shed_late(us);
 #endif
         song.cpu_q8 = (song.cpu_q8 * 15u + (us * 256u) / (HALF_FRAMES * 1000000u / FS)) / 16u;
         if (fm1_audio_free_half() != half)

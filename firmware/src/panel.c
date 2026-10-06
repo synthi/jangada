@@ -29,14 +29,30 @@ static const panel_t PANEL_DEFAULT = {
     {1, 1, 1, 1, 1, 1, 1},
 };
 
+/* a table to use: a permutation of the buttons and of the knobs, each knob turning one way or the other
+ * (Jangada, after SLOOP 2.3: 0.2 took any ids in range, so a damaged table could leave a label on no
+ * button and two on one) */
+static int panel_valid(const panel_t *q)
+{
+    uint32_t i, b = 0, e = 0;
+    if (q->magic != PANEL_MAGIC)
+        return 0;
+    for (i = 0; i < NB; i++) {
+        if (q->btn[i] >= 14u || (b >> q->btn[i]) & 1u)
+            return 0;
+        b |= 1u << q->btn[i];
+    }
+    for (i = 0; i < NE; i++) {
+        if (q->enc[i] >= 7u || (e >> q->enc[i]) & 1u || (q->dir[i] != 1 && q->dir[i] != -1))
+            return 0;
+        e |= 1u << q->enc[i];
+    }
+    return 1;
+}
+
 static void panel_init(void)                     /* also after a flash load: ids are used as array indexes and shifts */
 {
-    uint32_t i, ok = panel.magic == PANEL_MAGIC;
-    for (i = 0; ok && i < NB; i++)
-        ok = panel.btn[i] < 14u;
-    for (i = 0; ok && i < NE; i++)
-        ok = panel.enc[i] < 7u && (panel.dir[i] == 1 || panel.dir[i] == -1);
-    if (!ok)
+    if (!panel_valid(&panel))
         panel = PANEL_DEFAULT;
 }
 
@@ -69,7 +85,7 @@ static void settings_save(void);              /* project.c: flash copy (FELUCCA_
 
 static void settings_init(void)
 {
-    if (settings.magic != SETTINGS_MAGIC || settings.palette >= NPALETTES) {
+    if (settings.magic != SETTINGS_MAGIC || settings.palette >= NPALETTES || settings.lowcut > 1u) {
         settings.magic = SETTINGS_MAGIC;
         settings.palette = 5;                  /* CHOQUE (Jangada default) */
         settings.lowcut = 0;

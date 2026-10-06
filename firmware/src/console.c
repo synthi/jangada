@@ -217,6 +217,8 @@ static void con_status(void)
     con_kv("usb_frame_stalls", (int32_t)usb.frame_stalls);
     con_kv("usb_max_gap_polls", (int32_t)usb.max_gap);
     con_kv("midi_rx_pkts", (int32_t)usb.rx_pkts);
+    con_kv("midi_rx_held", (int32_t)usb.rx_held);     /* EP1 packets held back (NAK): the ring was full */
+    con_kv("midi_rx_bad", (int32_t)usb.rx_bad);       /* malformed events ignored */
     con_kv("midi_tx_pkts", (int32_t)usb.tx_pkts);
 #if FELUCCA_UAC
     con_uac();

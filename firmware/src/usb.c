@@ -107,6 +107,8 @@ static struct {
     uint8_t sx_len, sx_on;
     volatile uint8_t uboot_req;
     volatile uint8_t ota_req;    /* F0 22 24 35 7F F7: M-UPGRADE upgrade command (FELUCCA_OTA) */
+    uint8_t rx_pend;             /* EP1 OUT packet seen, not yet taken (the MIDI ring was too full) */
+    uint32_t rx_held, rx_bad;    /* packets held back (NAK) for room, malformed events ignored */
 } usb;
 
 #if FELUCCA_OTA
@@ -612,31 +614,75 @@ static void sysex_byte(uint8_t b)
     }
 }
 
-static void ep1_rx(void)
+/* one USB-MIDI event packet: SysEx bytes to sysex_byte, channel voice messages and the clock /
+ * transport realtime ones (CIN F: F8 clock, FA start, FB continue, FC stop; seq.c) to the MIDI ring.
+ * A malformed packet (a status that does not match its CIN, a data byte with bit 7) is ignored.
+ * (Jangada, after SLOOP 2.3 / Felucca 1.0) */
+static void midi_in_event(uint32_t pkt)
 {
-    uint32_t csr, n, i;
-    sie_wr(S_INDEX, 1);
-    csr = sie_rd(S_RXCSR1) | (sie_rd(S_RXCSR2) << 8);
-    if (!(csr & 1u))
+    uint32_t cin = pkt & 15u, st = (pkt >> 8) & 0xFFu;
+    if (cin >= 4u && cin <= 7u) {                      /* SysEx */
+        uint32_t k, nb = cin == 4u || cin == 7u ? 3u : cin == 6u ? 2u : 1u;
+        for (k = 0; k < nb; k++)
+            sysex_byte((uint8_t)(pkt >> (8u * (k + 1u))));
         return;
-    n = sie_rd(S_RXCOUNT1) | (sie_rd(S_RXCOUNT2) << 8);
-    if (n > 64u)
-        n = 64u;
-    fm1_usb_rx_sync();
-    for (i = 0; i + 3u < n; i += 4u) {
-        uint32_t cin = ep1rx[i] & 15u, pkt = (uint32_t)ep1rx[i] | (uint32_t)ep1rx[i + 1] << 8 |
-                                            (uint32_t)ep1rx[i + 2] << 16 | (uint32_t)ep1rx[i + 3] << 24;
-        if (cin >= 4u && cin <= 7u) {                   /* SysEx */
-            uint32_t k, nb = cin == 4u || cin == 7u ? 3u : cin == 6u ? 2u : 1u;
-            for (k = 0; k < nb; k++)
-                sysex_byte(ep1rx[i + 1 + k]);
-        } else if (((cin >= 8u && cin <= 0xEu) || (cin == 0xFu && ep1rx[i + 1] >= 0xF8u)) && mi_w - mi_r < MQ) {
-            /* (Jangada: CIN F with F8..FF = real time: the clock, start, continue, stop) */
+    }
+    if (st >= 0x80u && st < 0xF8u) {                   /* channel / system common also ends a SysEx */
+        usb.sx_on = 0;
+#if FELUCCA_OTA
+        sx_collect = 0;
+#endif
+    }
+    if ((cin == 0xFu && (st == 0xF8u || st == 0xFAu || st == 0xFBu || st == 0xFCu)) ||
+        (cin >= 8u && cin <= 0xEu && (st >> 4) == cin && !((pkt >> 16) & 0x80u) &&
+         (cin == 0xCu || cin == 0xDu || !(pkt & 0x80000000u)))) {
+        if (mi_w - mi_r < MQ) {
             midi_in_q[mi_w % MQ] = pkt;
             RING_PUBLISH();
             mi_w++;
         }
+        return;
     }
+    if (cin >= 8u && cin != 0xFu)
+        usb.rx_bad++;
+}
+
+/* one EP1 OUT packet (<= 16 events) into the MIDI ring, or 0: fewer than 16 + 8 slots free, so the
+ * packet stays (the host is NAKed) and is taken on a later poll. A burst from a DAW never drops a
+ * note-off (0.2 dropped what did not fit: hanging notes), and 8 slots stay for the TRS input, which
+ * shares the ring and cannot wait. The update loader never drains the ring: no back-pressure there.
+ * (Jangada, after SLOOP 2.3 / Felucca 1.0) */
+#define EP1_ROOM (16u + 8u)
+static int ep1_take(const uint8_t *b, uint32_t n)
+{
+    uint32_t i;
+#ifndef FELUCCA_LOADER
+    if (MQ - (mi_w - mi_r) < EP1_ROOM)
+        return 0;
+#endif
+    for (i = 0; i + 3u < n; i += 4u)
+        midi_in_event((uint32_t)b[i] | (uint32_t)b[i + 1] << 8 | (uint32_t)b[i + 2] << 16 | (uint32_t)b[i + 3] << 24);
+    return 1;
+}
+
+static void ep1_rx(void)                                /* leaves the packet (NAK) while the ring is too full */
+{
+    uint32_t csr, n;
+    sie_wr(S_INDEX, 1);
+    csr = sie_rd(S_RXCSR1) | (sie_rd(S_RXCSR2) << 8);
+    if (!(csr & 1u)) {
+        usb.rx_pend = 0;
+        return;
+    }
+    n = sie_rd(S_RXCOUNT1) | (sie_rd(S_RXCOUNT2) << 8);
+    if (n > 64u)
+        n = 64u;
+    fm1_usb_rx_sync();
+    if (!ep1_take(ep1rx, n)) {
+        usb.rx_held++;
+        return;                                         /* rx_pend stays: taken on a later poll */
+    }
+    usb.rx_pend = 0;
     usb.rx_pkts++;
     csr = (csr & ~0x164u) | 0x10u;
     sie_wr(S_RXCSR1, csr & 0xFFu);
@@ -986,6 +1032,7 @@ static void usb_poll(void)                              /* TIMER5 ISR, 2 kHz */
 #endif
         usb.e0_tx = 0;
         usb.has_pend_addr = 0;
+        usb.rx_pend = 0;
 #if FELUCCA_CDC
         cdc.dtr = 0;
         cdc.e0_rx = 0;
@@ -1003,6 +1050,8 @@ static void usb_poll(void)                              /* TIMER5 ISR, 2 kHz */
     if (it & 0x01u)
         ep0_service();
     if (ir & 0x02u)
+        usb.rx_pend = 1;                                /* (the flag reads once: remember the packet) */
+    if (usb.rx_pend)
         ep1_rx();
     if (usb.config)
         ep1_tx();

@@ -2,7 +2,7 @@
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
 /* Host test of the MIDI input parsers: the running-status parser in
  * firmware/src/midi_uart.c (um_byte) and the USB-MIDI SysEx path of firmware/src/usb.c
- * (sysex_byte frame assembly, ota_wire_send packetising). */
+ * (sysex_byte frame assembly, ota_wire_send packetising; EP1 back-pressure and malformed events). */
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -100,6 +100,45 @@ static int test_usb_sysex(void)
     return bad;
 }
 
+/* EP1 OUT (USB-MIDI from the computer): back-pressure instead of drops, malformed events ignored
+ * (Jangada, after SLOOP 2.3) */
+static int test_usb_ep1(void)
+{
+    uint8_t pk[64];
+    uint32_t i, w0, n = 0;
+    int bad = 0;
+    for (i = 0; i < 16u; i++) {                       /* 16 note-ons, channel 1 */
+        pk[4 * i] = 0x09; pk[4 * i + 1] = 0x90; pk[4 * i + 2] = (uint8_t)(48 + i); pk[4 * i + 3] = 100;
+    }
+    mi_r = mi_w;
+    mi_w += MQ - 20u;                                 /* the ring nearly full: 20 slots free (< 16 + 8) */
+    w0 = mi_w;
+    bad += check("usb ep1: ring too full -> packet held, nothing dropped", ep1_take(pk, 64) == 0 && mi_w == w0);
+    mi_r = mi_w;                                      /* the sequencer drained it */
+    bad += check("usb ep1: room again -> all 16 events taken", ep1_take(pk, 64) == 1 && mi_w == w0 + 16u &&
+                 midi_in_q[(mi_w - 1u) % MQ] == 0x643F9009u);
+    mi_r = mi_w;
+    w0 = mi_w;
+    {
+        static const uint8_t m[] = {
+            0x09, 0x80, 60, 100,                      /* status does not match CIN 9: ignored */
+            0x09, 0x90, 0xC0, 100,                    /* data byte with bit 7: ignored */
+            0x08, 0x80, 60, 0,                        /* a good note-off */
+            0x0F, 0xF8, 0, 0,                         /* clock */
+            0x0F, 0xFA, 0, 0,                         /* start */
+            0x0F, 0xFE, 0, 0,                         /* active sensing: not queued */
+            0x0C, 0xC0, 5, 0,                         /* program change (2 bytes) */
+        };
+        n = ep1_take(m, sizeof m);
+        bad += check("usb ep1: malformed ignored, clock / start / note-off / PC queued",
+                     n == 1u && mi_w == w0 + 4u && midi_in_q[w0 % MQ] == 0x003C8008u &&
+                     midi_in_q[(w0 + 1u) % MQ] == 0xF80Fu && midi_in_q[(w0 + 2u) % MQ] == 0xFA0Fu &&
+                     midi_in_q[(w0 + 3u) % MQ] == 0x0005C00Cu);
+    }
+    mi_r = mi_w;
+    return bad;
+}
+
 int main(void)
 {
     static const uint8_t in[] = {
@@ -138,6 +177,7 @@ int main(void)
         }
         bad += (uint32_t)check("uart: channels 1, 2, 3, 10, 16 -> USB-MIDI packets", ok);
     }
+    bad += (uint32_t)test_usb_ep1();
     bad += (uint32_t)test_usb_sysex();
     printf("%s\n", bad ? "MIDI PARSER TEST FAILED" : "midi parser test passed");
     return (int)bad;

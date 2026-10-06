@@ -17,12 +17,14 @@
  *
  * fm1_input_scan() runs one full frame (11 columns, ~0.6 ms) and calls
  * FM1_INPUT_IDLE() while it waits.
- * Keys/buttons: integrating debounce of FM1_DEBOUNCE frames.
- * Encoders: quadrature decoder (2-sample filter, + = clockwise) with detent
- * learning (fm1_enc.h, Jangada: rests counted as evidence, see there); a step
- * is emitted only on reaching a rest state after >= 2 net transitions.
- * One click = one step at any speed, whether a detent is a half or a full
- * quadrature cycle. fm1_enc_take() returns the steps.
+ * Keys/buttons (Jangada, after SLOOP 2.3 / Felucca 1.0): debounced as soon as their column is read
+ * (fm1__keys), not at the end of the frame. A press counts after FM1_DEB_PRESS frames closed in a row
+ * (1.1-2.2 ms: the matrix has diodes and no ghosting, so a closed sample is a closed key; two in a row
+ * keep one stray sample from playing a note), a release after FM1_DEB_RELEASE frames open in a row
+ * (~9 ms): a contact bouncing open on the way down, or chattering on the way up, never ends a note
+ * early or plays it twice. (0.2 integrated 8 frames both ways: a press took ~9 ms.)
+ * Encoders: quadrature decoder (2-sample filter, + = clockwise) with detent counting (fm1_enc.h:
+ * one rest state, whole cycles). One click = one step at any speed. fm1_enc_take() returns the steps.
  * LEDs: set fm1_led[col] (packed row bits, bit1 PA5..bit4 PA8); they are lit
  * while that column is selected. fm1_led_key/btn helpers address them by id.
  */
@@ -38,7 +40,8 @@
 #ifndef FM1_LED_US
 #define FM1_LED_US 40u           /* LED on-time per column (brightness vs scan rate) */
 #endif
-#define FM1_DEBOUNCE 8u           /* frames (~0.6 ms each) */
+#define FM1_DEB_PRESS 2u          /* frames closed in a row: a press (a frame = 11 ticks, ~1.1 ms) */
+#define FM1_DEB_RELEASE 8u        /* frames open in a row: a release (~9 ms) */
 #define FM1_SETTLE_US 10u
 #define FM1_NCOL 11u
 #define FM1_NKEY 41u              /* ids: 0..13 buttons, 14..40 note keys */
@@ -150,34 +153,34 @@ static void fm1_input_init(void)
 static void fm1__key(uint32_t id, uint32_t closed)
 {
     volatile uint8_t *c = &fm1_in.cnt[id];
-    uint32_t on;
-    if (closed) {
-        if (*c < FM1_DEBOUNCE)
-            (*c)++;
-    } else if (*c) {
-        (*c)--;
-    }
-    if (*c == FM1_DEBOUNCE)
-        on = 1;
-    else if (*c == 0)
-        on = 0;
-    else
+    uint32_t note = id >= 14u, bit = note ? 1u << (id - 14u) : 1u << id;
+    uint32_t on = ((note ? fm1_in.notes : fm1_in.buttons) & bit) != 0u;
+    if (closed == on) {                            /* agrees with the state: start over */
+        *c = 0;
         return;
-    if (id >= 14u) {
-        if (on) {
-            if (!(fm1_in.notes & (1u << (id - 14u))))
-                fm1_in.notes_pressed |= 1u << (id - 14u);
-            fm1_in.notes |= 1u << (id - 14u);
-        }
-        else
-            fm1_in.notes &= ~(1u << (id - 14u));
-    } else if (on != ((fm1_in.buttons >> id) & 1u)) {
-        fm1_in.buttons ^= 1u << id;
-        if (on)
-            fm1_in.pressed |= 1u << id;
-        else
-            fm1_in.released |= 1u << id;
     }
+    if (++*c < (on ? FM1_DEB_RELEASE : FM1_DEB_PRESS))
+        return;
+    *c = 0;
+    if (note) {
+        if (!on)
+            fm1_in.notes_pressed |= bit;
+        fm1_in.notes ^= bit;
+    } else {
+        fm1_in.buttons ^= bit;
+        if (!on)
+            fm1_in.pressed |= bit;
+        else
+            fm1_in.released |= bit;
+    }
+}
+
+static void fm1__keys(uint32_t p)                  /* the keys of column p, just read */
+{
+    uint32_t r, raw = fm1_in.raw[p];
+    for (r = 1; r < 5u; r++)
+        if (FM1_KEYMAP[r][p] >= 0)
+            fm1__key((uint32_t)FM1_KEYMAP[r][p], (raw >> r) & 1u);
 }
 
 static void fm1__frame(void);
@@ -190,6 +193,7 @@ static void fm1_input_scan(void)
         fm1__sr_word(0xFFFFu ^ (1u << p) ^ (p < 2u ? 1u << (11u + p) : 0u));
         fm1__wait(FM1_SETTLE_US);
         fm1_in.raw[p] = (uint8_t)fm1__rows();
+        fm1__keys(p);
         fm1__led_lines(fm1_led[p]);
         fm1__wait(FM1_LED_US);
     }
@@ -199,11 +203,7 @@ static void fm1_input_scan(void)
 
 static void fm1__frame(void)
 {
-    uint32_t p, r, e;
-    for (p = 0; p < FM1_NCOL; p++)
-        for (r = 1; r < 5u; r++)
-            if (FM1_KEYMAP[r][p] >= 0)
-                fm1__key((uint32_t)FM1_KEYMAP[r][p], (fm1_in.raw[p] >> r) & 1u);
+    uint32_t e;                                    /* (the keys: fm1__keys, as each column is read) */
     for (e = 0; e < FM1_NENC; e++) {               /* quadrature decoder + detents (fm1_enc.h) */
         const uint8_t *m = FM1_ENC[e];
         uint32_t cur = ((fm1_in.raw[m[0]] >> m[1]) & 1u) << 1 | ((fm1_in.raw[m[2]] >> m[3]) & 1u);
@@ -224,6 +224,7 @@ static void fm1_input_tick(void)
     fm1__sr_word(0xFFFFu ^ (1u << n) ^ (n < 2u ? 1u << (11u + n) : 0u));
     fm1__led_lines(fm1_led[n]);
     fm1__tick_col = (uint8_t)n;
+    fm1__keys(p);                                  /* its keys now: no wait for the frame's end */
     if (n == 0u)
         fm1__frame();
 }

@@ -490,12 +490,12 @@ static void persist_boot(void)                    /* before settings_init / pane
     }
     {
         int n = st_load(OBJ_SETTINGS, &p, sizeof p);
-        if (n == (int)sizeof p && p.magic == PERSIST_MAGIC) {
-            settings.magic = SETTINGS_MAGIC;
+        if (n == (int)sizeof p && p.magic == PERSIST_MAGIC && p.palette < NPALETTES && p.lowcut <= 1u) {
+            settings.magic = SETTINGS_MAGIC;        /* (each value checked as it is read: after SLOOP 2.3) */
             settings.palette = p.palette;
             settings.lowcut = p.lowcut;
             settings.zoom = 0;                      /* Jangada: ZOOM left the menu (was p.zoom) */
-            if (p.panel.magic == PANEL_MAGIC)
+            if (panel_valid(&p.panel))
                 panel = p.panel;
             persist_saved = p;
         } else if (n == (int)(8u + sizeof(panel_t)) && p.magic == 0x50455231u) {   /* "PER1": palette, panel */
@@ -503,10 +503,10 @@ static void persist_boot(void)                    /* before settings_init / pane
             panel_t old;
             memcpy(&old, w + 2, sizeof old);
             settings.magic = SETTINGS_MAGIC;
-            settings.palette = w[1];
+            settings.palette = w[1] < NPALETTES ? w[1] : 5u;
             settings.lowcut = 0;
             settings.zoom = 0;
-            if (old.magic == PANEL_MAGIC)
+            if (panel_valid(&old))
                 panel = old;
         }
     }

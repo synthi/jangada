@@ -91,6 +91,24 @@ int main(void)
                  st_sector(OBJ_SETTINGS, 1) + 4096 <= 0xFF000 && st_sector(OBJ_PROJECT0 + 3, 1) + 4096 <= 0xE0000 &&
                      st_sector(OBJ_UPRESET0, 0) >= 0xDC000 && st_sector(OBJ_UPRESET0 + 1, 1) + 4096 <= 0xE0000 &&
                      st_sector(OBJ_AUTOSAVE, 0) == 0x9F000 && st_sector(OBJ_AUTOSAVE, 1) == 0xFE000);
+    {   /* Jangada (after SLOOP 2.3): a record copied whole into the other sector (its slot says where it
+         * was written) or into another object's sector is not taken */
+        st_hdr_t h;
+        int cur;
+        uint32_t from, to;
+        memset(nor, 0xFF, sizeof nor);
+        st_save(OBJ_PROJECT0 + 1, a, sizeof a);
+        cur = st_current(OBJ_PROJECT0 + 1, &h);
+        from = st_sector(OBJ_PROJECT0 + 1, (uint32_t)cur);
+        to = st_sector(OBJ_PROJECT0 + 1, cur ? 0u : 1u);
+        memcpy(nor + to, nor + from, 4096);
+        memset(nor + from, 0xFF, 4096);
+        bad += check("a copy moved to the other sector -> nothing", st_load(OBJ_PROJECT0 + 1, got, sizeof got) < 0);
+        memcpy(nor + st_sector(OBJ_PROJECT0, (uint32_t)cur), nor + to, 4096);
+        bad += check("another object's record -> nothing", st_load(OBJ_PROJECT0, got, sizeof got) < 0);
+        bad += check("objects out of range: no load, no save",
+                     st_load(OBJ_COUNT, got, sizeof got) < 0 && st_save(OBJ_COUNT, a, 4) < 0);
+    }
     printf("%s\n", bad ? "STORAGE TEST FAILED" : "storage test passed");
     return bad != 0;
 }

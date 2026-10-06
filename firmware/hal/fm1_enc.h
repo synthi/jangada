@@ -1,56 +1,43 @@
 /* SPDX-License-Identifier: GPL-3.0-only */
-/* Jangada: the encoders' quadrature decoder with detent learning, no hardware here, so the host
- * can test it (tests/enc_test.c). fm1_input.h runs it once a scan frame per encoder.
+/* Jangada: the encoders' quadrature decoder with detent counting, no hardware here, so the host
+ * can test it (tests/enc_test.c). fm1_input.h runs it once a scan frame (~1.1 ms) per encoder.
  *
- * A click is one step at any speed, whether a detent is a full quadrature cycle (one rest state)
- * or a half (two complementary rest states, 00/11 or 01/10). Felucca learned the rest states from
- * any 40-frame pause (~25 ms): a slow turn that paused part way through a click taught a wrong
- * set, and from then on the knob skipped every other click or gave two steps a click (Felucca
- * #23). Here a rest has to last FM1_ENC_REST frames, and each counts as evidence: the set is the
- * state rested in most, plus its complement when that is seen too (at least a quarter as often).
- * A detent is where the knob rests every time it is let go; a pause part way is rare and
- * outvoted. */
+ * Jangada (after SLOOP 2.3 / Felucca 1.0, its #23 "knobs skipping or jumping"): an FM-1 detent is
+ * one full quadrature cycle (4 transitions) and the knob rests in one state, the one seen at
+ * power-on (relearned only after FM1_ENC_REST frames, ~1 s, parked elsewhere). Steps are emitted
+ * on arriving back at it, the net transitions rounded to whole cycles (>= 2 counts one: a lost
+ * transition or two is forgiven; a two-state jump counts on in the direction of travel). One
+ * click = one step at any speed; bounce and back-and-forth cancel out.
+ * Never a second rest state. Felucca 0.9 learned rest states from any 25 ms pause, and Jangada
+ * 0.2 from ~260 ms rests counted as evidence (a state and its complement): a knob held mid-click
+ * that long, often enough, taught the complement as a rest and every click counted twice from
+ * then on; short mid-click pauses of a slow turn taught the mid states and the knob went dead.
+ * tests/enc_test.c plays both against this one. */
 #pragma once
 #include <stdint.h>
 
-#define FM1_ENC_REST 240u         /* frames still (~150 ms at ~0.6 ms a frame) = the knob let go */
-#define FM1_ENC_SEEN_MAX 64u      /* evidence is halved there: it keeps adapting, slowly */
+#define FM1_ENC_REST 900u         /* frames still off the detent state (~1 s): that is the detent */
 
 typedef struct {
     uint8_t prev, last;           /* the last decoded state; the last raw sample (2-sample filter) */
-    uint8_t still;                /* frames in the same state, up to 255 */
-    uint8_t rest;                 /* the rest (detent) states, bit per state */
-    int8_t sub;                   /* net transitions since the last rest state */
-    uint8_t seen[4];              /* rests in each state */
+    uint8_t rest;                 /* the detent state (0..3) */
+    int8_t sub;                   /* net transitions since the last time on the detent */
+    uint16_t still;               /* frames in the same state */
 } fm1_enc_t;
 
 static void fm1_enc_init(fm1_enc_t *s)
 {
-    uint32_t i;
     s->prev = s->last = 0xFF;     /* seeded by the first frame */
-    s->still = 0;
     s->rest = 0;
     s->sub = 0;
-    for (i = 0; i < 4u; i++)
-        s->seen[i] = 0;
+    s->still = 0;
 }
 
-/* the rest set from the evidence */
-static uint8_t fm1__enc_set(const fm1_enc_t *s)
-{
-    uint32_t i, best = 0, c;
-    for (i = 1; i < 4u; i++)
-        if (s->seen[i] > s->seen[best])
-            best = i;
-    c = best ^ 3u;
-    return (uint8_t)(1u << best | (s->seen[c] && s->seen[c] * 4u >= s->seen[best] ? 1u << c : 0u));
-}
-
-/* one frame: cur = this frame's A (bit 1) and B (bit 0); returns the step it emits (-1, 0, +1) */
+/* one frame: cur = this frame's A (bit 1) and B (bit 0); returns the steps it emits (+ = clockwise) */
 static int fm1_enc_frame(fm1_enc_t *s, uint32_t cur)
 {
     uint32_t idx;
-    int step = 0;
+    int32_t n;
     if (cur != s->last) {                          /* 2-sample filter */
         s->last = (uint8_t)cur;
         s->still = 0;
@@ -58,14 +45,11 @@ static int fm1_enc_frame(fm1_enc_t *s, uint32_t cur)
     }
     if (s->prev == 0xFF) {                         /* first frame: the knob rests here */
         s->prev = (uint8_t)cur;
-        s->seen[cur] = 1;
-        s->rest = (uint8_t)(1u << cur);
+        s->rest = (uint8_t)cur;
     }
-    if (s->still < 255u && ++s->still == FM1_ENC_REST) {   /* let go here: evidence */
-        if (++s->seen[cur] >= FM1_ENC_SEEN_MAX)
-            for (idx = 0; idx < 4u; idx++)
-                s->seen[idx] >>= 1;
-        s->rest = fm1__enc_set(s);
+    if (s->still < 0xFFFFu && ++s->still == FM1_ENC_REST && cur != s->rest) {
+        s->rest = (uint8_t)cur;                    /* parked ~1 s off the detent (held at power-on): */
+        s->sub = 0;                                /* that is the detent. Never a second state (see top) */
     }
     if (cur == s->prev)
         return 0;
@@ -74,13 +58,18 @@ static int fm1_enc_frame(fm1_enc_t *s, uint32_t cur)
         s->sub++;
     else if ((0x2814u >> idx) & 1u)
         s->sub--;
+    else if (s->sub > 0)                           /* two states in one sample: a fast turn, */
+        s->sub = (int8_t)(s->sub + 2);             /* the way it was going */
+    else if (s->sub < 0)
+        s->sub = (int8_t)(s->sub - 2);
     s->prev = (uint8_t)cur;
-    if ((s->rest >> cur) & 1u) {                   /* back on a detent */
-        if (s->sub >= 2)
-            step = 1;
-        else if (s->sub <= -2)
-            step = -1;
-        s->sub = 0;
-    }
-    return step;
+    if (s->sub > 100 || s->sub < -100)
+        s->sub = 0;                                /* (never off the detent that long) */
+    if (cur != s->rest)
+        return 0;
+    n = s->sub < 0 ? -s->sub : s->sub;             /* back on the detent: whole cycles, a lost transition */
+    n = n >= 2 ? (n + 2) / 4 : 0;                  /* or two forgiven (one click = 4 transitions) */
+    n = s->sub < 0 ? -n : n;
+    s->sub = 0;
+    return (int)n;
 }

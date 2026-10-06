@@ -117,6 +117,46 @@ static void voice_kill(voice_t *v)                      /* fade out over the nex
     voice_kills++;
 }
 
+/* overload (Jangada, after SLOOP 2.3 / Felucca 1.0; audio.c asks for it when two halves in a row took
+ * > 85 % of their time): fade one voice out over the next block (voice_kill: no click), one more each
+ * half while it lasts. A single late half (a USB burst, a flash write) sheds nothing. First the
+ * quietest releasing voice; else the oldest held one that is not a part's lowest POLY note nor its
+ * MONO / LEGATO / UNISON lead, as the voice budget keeps them: a dense chord on a heavy engine thins
+ * out from the top, bass and lead stay. (0.2: one late half shed, and the oldest held note went into
+ * its release, the bass first.) */
+static uint32_t shed_count;
+
+static __attribute__((noinline)) void shed_voice(void)   /* (out of line: rare, its loops off the ISR's budget) */
+{
+    uint32_t p, i;
+    voice_t *best = 0;
+    for (p = 0; p < NTRK; p++)
+        for (i = 0; i < NVOICE && trk_synth(p); i++) {
+            voice_t *v = &trk[p].v[i];
+            if (v->active && !v->gate && v->stage != 4u && (!best || v->env < best->env))
+                best = v;
+        }
+    if (best) {
+        voice_kill(best);
+        shed_count++;
+        return;
+    }
+    for (p = 0; p < NTRK; p++) {
+        const track_t *t = &trk[p];
+        uint32_t mode = (uint32_t)t->p[P_VOICE], low = mode == V_POLY ? lowest_held(t) : 0u;
+        for (i = 0; i < NVOICE && trk_synth(p); i++) {
+            voice_t *v = &trk[p].v[i];
+            if (v->active && v->gate && v->stage != 4u &&
+                ((mode == V_POLY && i != low) || (mode != V_POLY && i > 0u)) && (!best || v->age < best->age))
+                best = v;
+        }
+    }
+    if (best) {
+        voice_kill(best);
+        shed_count++;
+    }
+}
+
 /* the budget is full: free a voice for part t. 0 = nothing to take (soft) */
 static int voice_room(track_t *t, int soft)
 {
@@ -366,9 +406,10 @@ static void trk_note_off(track_t *t, uint32_t note)
             t->xp_vel[k++] = t->xp_vel[i];
         }
     t->xp_n = (uint8_t)k;
+    mono_remove(t, note);                               /* in any mode: a key let go after a VOICE change must
+                                                         * not stay in the MONO stack (after SLOOP 2.3) */
     if (mode != V_POLY) {
         uint32_t nv = mode == V_UNISON ? trk_nvoice(t) : 1u;
-        mono_remove(t, note);
         if (t->mono_note == note) {
             uint32_t next = mono_pick(t);
             if (next) {                                 /* fall back to a held note, legato */

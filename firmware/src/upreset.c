@@ -56,9 +56,21 @@ static uint8_t up_foreign[UP_SLOTS / UP_PER_BANK];   /* Jangada: stored, but not
 
 static up_rec_t *up_rec(uint32_t k) { return &up_bank[k / UP_PER_BANK].r[k % UP_PER_BANK]; }
 
+/* a record to use: its name printable ASCII, then only 0s (Jangada, after SLOOP 2.3: a damaged name
+ * reached the screen and the editor as it was) */
 static int up_valid(const up_rec_t *r)
 {
-    return r->used == UP_USED && r->ver == UP_VER && r->engine < NENGINES && r->np == P_COUNT && r->name[0];
+    uint32_t i, end = 0;
+    if (r->used != UP_USED || r->ver != UP_VER || r->engine >= NENGINES || r->np != P_COUNT || !r->name[0])
+        return 0;
+    for (i = 0; i < sizeof r->name; i++) {
+        uint32_t c = (uint8_t)r->name[i];
+        if (!c)
+            end = 1;
+        else if (end || c < 32u || c > 126u)
+            return 0;
+    }
+    return 1;
 }
 
 static int up_used(uint32_t k) { return k < UP_SLOTS && up_valid(up_rec(k)); }

@@ -63,6 +63,18 @@ int main(void)
     bad += check("UP_PUT frame < 640 bytes", 5u + n + 1u < 640u);
     bad += check("UP_PUT parses", up_parse(a, n, &r, &slot) == 0 && slot == 5u && r.engine == 2u &&
                                       up_valid(&r) && !memcmp(r.name, "Bass One", 8) && !r.name[8]);
+    {   /* Jangada (after SLOOP 2.3): a damaged name makes the record unreadable */
+        up_rec_t d = r;
+        d.name[3] = 7;
+        ok = !up_valid(&d);
+        d = r;
+        d.name[10] = 'X';                            /* text after the end (8 letters, then 0s) */
+        ok &= !up_valid(&d);
+        d = r;
+        d.engine = NENGINES;
+        ok &= !up_valid(&d);
+        bad += check("damaged record (name, text after its end, engine) -> invalid", ok);
+    }
     ok = 1;
     for (i = 0; i < P_COUNT; i++)
         ok &= r.p[i] == (int16_t)(-40 + (int32_t)i);
