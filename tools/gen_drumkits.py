@@ -20,7 +20,8 @@ from pathlib import Path
 LANES = ["KICK", "SNARE", "CLAP", "CHH", "OHH", "TOMLO", "TOMHI", "CRASH", "RIDE", "SHAKER",
          "CONGA", "RIM", "COWBELL", "CLAVE", "KICK2", "SNARE2"]
 WAVE = {None: 0, "sine": 1, "tri": 2, "square": 3, "fm": 4, "bell": 5}
-SRC = {None: 0, "white": 1, "metal": 2, "cym": 3, "chip": 4, "clap": 0x11}
+SRC = {None: 0, "white": 1, "metal": 2, "cym": 3, "chip": 4, "clap": 0x11,
+       "chain": 0x12}                # Jangada: CLAP bursts of the METAL squares (chains)
 FMODE = {None: 0, "lp": 1, "bp": 2, "hp": 3}
 LEVELS_FILE = Path(__file__).with_name("drumkit_levels.json")
 
@@ -50,7 +51,8 @@ STEPS_PER_OCT = 127 / math.log2(16000 / 30)
 
 def S(wave=None, hz=100, bend=0, bt=20, hold=0, decay=100, tlev=110, t2=0.0, t2lev=0, click=0,
       src=None, nlev=0, nhold=0, ndec=50, filt=None, fenv=0.0, hpf=None, chip=None, drive=0, level=0.0):
-    """wave/hz: the tone; bend semitones falling over bt ms; hold ms at full, then decay;
+    """wave/hz: the tone; bend semitones falling over bt ms (Jangada: < 0, rising: the cuica);
+    hold ms at full, then decay;
     t2: the second partial's ratio (0 = none) and level; click: the attack burst 0..127;
     src: the noise, its level, hold and decay; filt: (mode, Hz, resonance 0..1[, "all"]) on the
     noise (or everything); fenv: octaves the cutoff starts above it, falling with the pitch;
@@ -364,7 +366,225 @@ KITS = [
         RIDE=S(None, 320, src="cym", nlev=90, ndec=2400, filt=("bp", 6500, .35), hpf=3500, click=16),
         TOMLO=S("sine", 110, 3, 30, 6, 400, 106, 1.5, 40, 20, "white", 16, 0, 40, ("lp", 2000, .1)),
         TOMHI=S("sine", 160, 3, 30, 6, 340, 104, 1.5, 40, 20, "white", 16, 0, 40, ("lp", 2500, .1)))),
+    # -- Jangada's own (appended: G_KIT is saved by index; KIT_NAV below shows them first)
+    ("RUST", "INDUSTRIAL", 0x13, dict(                          # dry and broken: NIN, Ghosts
+        KICK=S("sine", 48, 30, 18, 10, 300, 124, click=100, src="white", nlev=60, ndec=8,
+               filt=("lp", 6000, .2), drive=120),
+        KICK2=S("sine", 42, 24, 30, 30, 700, 124, click=60, filt=("lp", 1200, .4, "all"), drive=127),
+        SNARE=S("tri", 180, 8, 12, 0, 90, 90, 1.6, 60, 50, "white", 120, 140, 25, ("bp", 1800, .2),
+                drive=80),                                      # gated: the noise held, then cut
+        SNARE2=S("fm", 240, 12, 10, 0, 80, 100, src="metal", nlev=100, nhold=60, ndec=20,
+                 filt=("hp", 1500, .3), drive=100),             # a clang
+        CLAP=S(None, src="clap", nlev=127, nhold=80, ndec=30, filt=("bp", 1600, .5), hpf=900, drive=60),
+        CHH=S(None, 300, src="metal", nlev=120, ndec=35, filt=("hp", 7000, .3), hpf=6000, drive=90),
+        OHH=S(None, 300, src="metal", nlev=114, nhold=40, ndec=260, filt=("hp", 6500, .3), hpf=5500, drive=90),
+        TOMLO=S("fm", 70, 30, 150, 10, 380, 120, drive=110),
+        TOMHI=S("fm", 105, 30, 150, 10, 320, 118, drive=110),
+        CRASH=S(None, 180, src="cym", nlev=120, nhold=30, ndec=1600, filt=("bp", 3500, .5), drive=80),
+        RIDE=S("bell", 820, 0, 5, 0, 600, 110, src="metal", nlev=50, ndec=300,
+               filt=("bp", 3000, .6, "all"), drive=40),         # a pipe
+        SHAKER=S(None, src="white", nlev=100, nhold=10, ndec=40, filt=("hp", 6000, .2), drive=60),
+        CONGA=S("square", 160, 12, 30, 4, 140, 100, filt=("lp", 2000, .5, "all"), fenv=2, drive=70),
+        RIM=S("tri", 1400, 0, 5, 0, 20, 100, 2.3, 80, 70, "white", 60, 0, 8, ("bp", 2400, .5, "all"), drive=90),
+        COWBELL=S("bell", 330, 0, 5, 10, 240, 116, filt=("bp", 1800, .6, "all"), drive=100),
+        CLAVE=S("fm", 1800, 2, 5, 0, 60, 110, click=60, drive=60))),
+    ("FORGE", "METAL", 0, dict(                                 # anvils, chains, sheets: inharmonic, ringing
+        KICK=S("sine", 55, 18, 20, 8, 260, 124, 2.76, 70, 70, drive=50),       # the hammer and the plate
+        KICK2=S("fm", 45, 12, 40, 30, 1200, 120, filt=("lp", 1500, .3, "all"), drive=40),
+        SNARE=S("bell", 620, 0, 5, 0, 700, 120, click=60, src="metal", nlev=80, ndec=180,
+                filt=("bp", 2600, .7, "all")),                  # the anvil
+        SNARE2=S(None, 410, src="metal", nlev=120, ndec=90, filt=("bp", 5000, .5), hpf=2500),
+        CLAP=S(None, 340, src="chain", nlev=124, ndec=200, filt=("bp", 4200, .5), hpf=2000),   # chains
+        CHH=S(None, 520, src="metal", nlev=118, ndec=45, filt=("bp", 7800, .6), hpf=5000),
+        OHH=S(None, 520, src="metal", nlev=110, nhold=10, ndec=600, filt=("bp", 7000, .6), hpf=4500),
+        TOMLO=S("bell", 180, 1, 30, 0, 900, 118, filt=("bp", 900, .7, "all")),     # pipes
+        TOMHI=S("bell", 270, 1, 30, 0, 800, 116, filt=("bp", 1300, .7, "all")),
+        CRASH=S("fm", 700, 0, 5, 0, 1800, 70, src="cym", nlev=110, nhold=20, ndec=2200, filt=("hp", 3000, .3)),
+        RIDE=S("fm", 1050, 0, 5, 0, 2000, 110, 2.76, 60, 20, filt=("bp", 3000, .5, "all")),    # it rings
+        SHAKER=S(None, 700, src="metal", nlev=100, nhold=8, ndec=50, filt=("hp", 8000, .3)),
+        CONGA=S("sine", 380, 0, 5, 0, 600, 116, 2.76, 90, 40),                   # a steel pan
+        RIM=S("fm", 2600, 0, 5, 0, 40, 110, click=80),
+        COWBELL=S("bell", 880, 0, 5, 4, 1200, 118, filt=("bp", 3500, .75, "all")),
+        CLAVE=S("sine", 3100, 0, 5, 0, 300, 110, 2.41, 80, 30))),
+    ("PISTON", "MACHINE", 0, dict(                              # engines: clicks, air, steam
+        KICK=S("sine", 62, 20, 8, 2, 90, 124, click=90, drive=40),             # short and dry
+        KICK2=S("square", 50, 24, 15, 4, 120, 110, filt=("lp", 900, .5, "all"), fenv=2.5, drive=50),
+        SNARE=S("tri", 210, 4, 10, 0, 40, 60, 0, 0, 60, "white", 120, 30, 90, ("bp", 3000, .3)),
+        SNARE2=S(None, src="white", nlev=110, nhold=60, ndec=180, filt=("hp", 4000, .3), hpf=2000),   # a valve
+        CLAP=S(None, src="clap", nlev=120, ndec=40, filt=("bp", 2500, .6), hpf=1200),   # a ratchet
+        CHH=S(None, src="white", nlev=110, ndec=12, filt=("hp", 9000, .2), click=80),
+        OHH=S(None, src="white", nlev=104, nhold=80, ndec=300, filt=("bp", 6000, .4), hpf=3000),  # steam
+        TOMLO=S("tri", 85, 18, 80, 6, 200, 116, filt=("lp", 1500, .5, "all"), fenv=2, drive=30),
+        TOMHI=S("tri", 130, 18, 80, 6, 170, 114, filt=("lp", 2000, .5, "all"), fenv=2, drive=30),
+        CRASH=S(None, src="white", nlev=110, nhold=200, ndec=900, filt=("bp", 4500, .3), hpf=1500),
+        RIDE=S("square", 2400, 0, 5, 0, 25, 80, src="metal", nlev=80, ndec=30, filt=("bp", 5000, .5, "all")),
+        SHAKER=S(None, src="chip", nlev=96, ndec=30, chip=9000),
+        CONGA=S("sine", 260, 12, 12, 2, 70, 116, click=50),
+        RIM=S("square", 1100, 0, 5, 0, 12, 100, click=60),
+        COWBELL=S("bell", 460, 0, 5, 0, 70, 112, filt=("bp", 2200, .5, "all")),
+        CLAVE=S("sine", 4000, 0, 5, 0, 8, 60, click=127))),                    # a relay
+    ("HURT", "FRAGILE", 0, dict(                                # low, muffled, breathing: the quiet NIN
+        KICK=S("sine", 46, 6, 40, 10, 500, 116, click=6, filt=("lp", 400, .1, "all")),
+        KICK2=S("sine", 40, 4, 40, 20, 900, 110, filt=("lp", 300, .1, "all")),  # a heartbeat
+        SNARE=S("tri", 190, 2, 10, 0, 100, 40, src="white", nlev=96, nhold=40, ndec=380,
+                filt=("lp", 2500, .3)),
+        SNARE2=S("sine", 220, 2, 10, 0, 140, 90, 1.6, 40, 0, "white", 60, 0, 120, ("lp", 1800, .2)),
+        CLAP=S(None, src="white", nlev=100, nhold=60, ndec=400, filt=("bp", 1200, .3)),   # a breath
+        CHH=S(None, src="white", nlev=80, ndec=40, filt=("bp", 5000, .3), hpf=3000),
+        OHH=S(None, src="white", nlev=80, nhold=30, ndec=500, filt=("bp", 4000, .3), hpf=2500),
+        TOMLO=S("sine", 70, 3, 40, 10, 700, 114, 1.5, 30, 0, "white", 20, 0, 60, ("lp", 900, .1, "all")),
+        TOMHI=S("sine", 100, 3, 40, 10, 600, 112, 1.5, 30, 0, "white", 20, 0, 60, ("lp", 1200, .1, "all")),
+        CRASH=S(None, 205, src="cym", nlev=80, nhold=40, ndec=3000, filt=("lp", 3500, .2)),
+        RIDE=S(None, 262, src="metal", nlev=80, ndec=1800, filt=("bp", 3800, .5), hpf=2500),
+        SHAKER=S(None, src="white", nlev=84, nhold=20, ndec=80, filt=("bp", 4500, .3)),
+        CONGA=S("sine", 196, 1, 20, 4, 400, 110, 2.0, 40, filt=("lp", 1200, .2, "all")),
+        RIM=S("sine", 900, 0, 5, 0, 40, 90, 1.5, 40, 6),
+        COWBELL=S("sine", 1320, 0, 5, 0, 900, 100, 2.76, 50),                  # a music box
+        CLAVE=S("sine", 1800, 0, 5, 0, 30, 90))),
+    ("MANGUE", "MANGUEBEAT", 0, dict(                           # maracatu, baiao, coco, with the weight
+        KICK=S("sine", 62, 10, 35, 12, 450, 124, 1.5, 50, 40, "white", 40, 0, 25, ("lp", 1800, .2),
+               drive=60),                                       # alfaia: the body and the skin
+        KICK2=S("sine", 55, 8, 25, 6, 260, 124, 1.6, 40, 50, "white", 50, 0, 15, ("lp", 1500, .2),
+                drive=70),                                      # zabumba
+        SNARE=S("tri", 260, 4, 10, 0, 60, 80, 1.6, 50, 50, "white", 118, 6, 140, ("bp", 4200, .3),
+                drive=40),                                      # caixa de maracatu: the snares
+        SNARE2=S("tri", 900, 2, 5, 0, 30, 100, 1.5, 60, 70, "white", 70, 0, 20, ("bp", 2800, .5, "all"),
+                 drive=30),                                     # bacalhau: the zabumba's stick
+        CLAP=S(None, src="clap", nlev=124, ndec=160, filt=("bp", 1300, .4), hpf=700),   # palmas
+        CHH=S("sine", 1900, 0, 5, 0, 70, 96, 2.76, 70, src="metal", nlev=40, ndec=60,
+              filt=("hp", 5000, .3), hpf=4000),                 # triangulo, closed (it chokes the open one)
+        OHH=S("sine", 1900, 0, 5, 0, 900, 96, 2.76, 70, src="metal", nlev=40, ndec=700,
+              filt=("hp", 5000, .3), hpf=4000),                 # triangulo, open
+        TOMLO=S("sine", 85, 8, 35, 10, 380, 120, 1.5, 50, 40, "white", 35, 0, 20, ("lp", 2200, .2),
+                drive=50),                                      # alfaia meiao
+        TOMHI=S("tri", 380, -9, 120, 40, 220, 116, 2.0, 40, 0, filt=("bp", 800, .6, "all"), fenv=-1.0),
+        CRASH=S(None, 190, src="cym", nlev=112, nhold=10, ndec=1500, filt=("hp", 3500, .3), drive=60),
+        RIDE=S("bell", 290, 0, 5, 10, 700, 118, filt=("bp", 1100, .55, "all"), drive=50),   # gongue
+        SHAKER=S(None, src="white", nlev=104, nhold=14, ndec=60, filt=("bp", 6000, .35)),   # ganza
+        CONGA=S("tri", 560, -7, 110, 30, 160, 116, 2.0, 40, 0, filt=("bp", 1000, .6, "all"),
+                fenv=-1.0),                                     # cuica: the glide up
+        RIM=S("tri", 1500, 0, 5, 0, 18, 100, 1.47, 70, 60, "white", 50, 0, 6, ("bp", 2600, .4, "all")),
+        COWBELL=S("sine", 700, 0, 5, 4, 380, 112, 2.76, 70, 30),               # agogo, low
+        CLAVE=S("sine", 935, 0, 5, 4, 340, 110, 2.76, 70, 30))),               # agogo, high
 ]
+
+
+# ---- Jangada: the kit browser's order (GLO > KIT, the PRESETS knob on the drum track) -------
+# G_KIT keeps the index into KITS (+ 1, 0 = GM): projects saved before keep their kit. The new
+# kits sit at the end of KITS and are shown first, right after GM.
+KIT_FIRST = ["RUST", "FORGE", "PISTON", "HURT", "MANGUE"]
+
+# ---- Jangada: factory beats (GLO > KIT, KNOB 4 BEAT; a kit loads its own into an empty drum track)
+# 16 steps of GM notes (DS_MAP takes them to the lanes; up to 4 a step). A row per note: "." rest,
+# anything else a hit. "v": the step's velocity, 1..9 (x 14) or A (accent: 127); "r": ratchet 2..4.
+# Notes of MANGUE: 36 alfaia, 43 alfaia meiao, 35 zabumba, 38 caixa, 40 bacalhau, 37 tamanco (rim),
+# 42 / 46 triangulo closed / open, 70 ganza, 51 / 53 gongue low / high, 56 / 75 agogo, 63 / 48 cuica,
+# 39 palmas.
+BEATS = [
+    ("MARACATU", "MANGUE", {                    # baque virado: alfaias, caixa in 16ths, gongue, ganza
+        36: "X..X..X...X.X...",
+        43: "........X.....X.",
+        51: "X.....X.....X...",
+        53: "..X.....X.X...X.",
+        38: "XXXXXXXXXXXXXXXX",
+        70: "XXXXXXXXXXXXXXXX",
+        "v": "A46945958494A486",
+        "r": ".......2.......2"}),
+    ("BAIAO", "MANGUE", {                       # zabumba (grave and bacalhau) and triangulo
+        35: "X..X....X..X....",
+        40: "..X...X...X...X.",
+        42: "XX.XXX.XXX.XXX.X",
+        46: "..X...X...X...X.",
+        "v": "A4895484A4895484"}),
+    ("COCO", "MANGUE", {                        # zabumba, palmas, tamancos, ganza
+        35: "X.....X.X.....X.",
+        39: "....X..X....X..X",
+        37: "..XX......XX....",
+        70: "XXXXXXXXXXXXXXXX",
+        "v": "A4799498A4799498"}),
+    ("GRIND", "RUST", {                         # the industrial march
+        36: "X.....X.X..X....",
+        38: "....X.......X...",
+        42: "X.X.X.X.X.X.X.XX",
+        40: "...............X",
+        51: "..........X.....",
+        "v": "A363A383938AA367",
+        "r": "..............2."}),
+    ("ANVIL", "FORGE", {                        # hammer, anvil, chains
+        36: "X.......X..X....",
+        38: "....X.......X...",
+        39: "......X.......X.",
+        56: "..X.......X....X",
+        51: "X...............",
+        42: "...X...X...X...X",
+        "v": "A585A585A585A585"}),
+    ("ENGINE", "PISTON", {                      # pistons, ticks, valves, a relay
+        36: "X...X...X...X...",
+        35: "..X.......X.....",
+        42: ".X.X.X.X.X.X.X.X",
+        40: "......X.......X.",
+        75: "...X.......X....",
+        38: "....X.......X...",
+        39: "...............X",
+        "v": "A4759484A4759486",
+        "r": ".......2.......3"}),
+    ("FRAGILE", "HURT", {                       # a heartbeat, breaths, a music box
+        36: "X.........X.....",
+        38: "....X.......X...",
+        42: "..X...X...X...X.",
+        56: "X......X........",
+        43: "............X...",
+        "v": "7.3.5.34..6.5.3."}),
+]
+
+
+def beat_rows(name, rows):
+    notes, vel, flags = [[] for _ in range(16)], [0] * 16, [0] * 16
+    for k, r in rows.items():
+        assert len(r) == 16, (name, k)
+        if isinstance(k, int):
+            for i, c in enumerate(r):
+                if c != ".":
+                    notes[i].append(k)
+    for i in range(16):
+        assert len(notes[i]) <= 4, (name, i, notes[i])
+        v = rows.get("v", "." * 16)[i]
+        if v == "A":
+            vel[i], flags[i] = 127, 1                                   # SF_ACCENT
+        elif v != ".":
+            vel[i] = 14 * int(v)
+        else:
+            vel[i] = 96
+        r = rows.get("r", "." * 16)[i]
+        if r != ".":
+            flags[i] |= (int(r) - 1) << 3                               # SF_RATCH
+        if not notes[i]:
+            vel[i], flags[i] = 0, 0
+    return notes, vel, flags
+
+
+def beats_c():
+    names = [k[0] for k in KITS]
+    L = [f"#define DS_NBEATS {len(BEATS)}u", "static const dbeat_t DS_BEATS[DS_NBEATS] = {"]
+    for name, kitname, rows in BEATS:
+        assert len(name) <= 8 and kitname in names, name
+        notes, vel, flags = beat_rows(name, rows)
+        L.append(f'    {{"{name}", {{' + ", ".join("{" + ", ".join(str(n) for n in ns) + "}" for ns in notes) + "},")
+        L.append("     {" + ", ".join(map(str, vel)) + "}, {" + ", ".join(map(str, flags)) + "}},")
+    L.append("};")
+    L.append("#define DS_BEAT_NAME_LIST " + ", ".join(f'"{b[0]}"' for b in BEATS))
+    first = [names.index(n) + 1 for n in KIT_FIRST]
+    nav = [0] + first + [i + 1 for i in range(len(KITS)) if i + 1 not in first]
+    L.append("/* the browser's order: G_KIT values (0 = GM) */")
+    L.append("static const uint8_t DS_KIT_NAV[DS_NKITS + 1u] = {" + ", ".join(map(str, nav)) + "};")
+    own = [0] * (len(KITS) + 1)
+    for bi, (name, kitname, rows) in enumerate(BEATS):
+        g = names.index(kitname) + 1
+        if not own[g]:
+            own[g] = bi + 1
+    L.append("/* a kit's own beat by G_KIT (DS_BEATS index + 1, 0 = none): loaded into an untouched drum track */")
+    L.append("static const uint8_t DS_KIT_BEAT[DS_NKITS + 1u] = {" + ", ".join(map(str, own)) + "};")
+    return L
 
 
 def main(path):
@@ -376,15 +596,16 @@ def main(path):
         L.append(f'    {{"{name}", "{style}", 0x{crush:02X}, {{')
         for lane in LANES:
             v = enc(k[lane], levels.get(name, {}).get(lane, 0.0))
-            assert len(v) == 22 and all(0 <= x <= 255 for x in v), (name, lane, v)
-            assert -128 <= v[17] <= 127, (name, lane)
+            assert len(v) == 22 and all(0 <= x <= 255 for i, x in enumerate(v) if i not in (4, 17)), (name, lane, v)
+            assert -128 <= v[4] <= 127 and -128 <= v[17] <= 127, (name, lane)   # bend, fenv: int8_t
             L.append("        {" + ", ".join(str(x) for x in v) + f"}},   /* {lane} */")
         L.append("    }},")
     L.append("};")
     L.append("#define DS_KIT_NAME_LIST " + ", ".join(f'"{k[0]}"' for k in KITS))
     L.append("#define DS_KIT_STYLE_LIST " + ", ".join(f'"{k[1]}"' for k in KITS))
+    L += beats_c()
     Path(path).write_text("\n".join(L) + "\n")
-    print(f"drum kits: {len(KITS)} synthesised -> {path}")
+    print(f"drum kits: {len(KITS)} synthesised, {len(BEATS)} beats -> {path}")
 
 
 if __name__ == "__main__":

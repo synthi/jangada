@@ -165,4 +165,27 @@ int main(void){
    lights_lvl = lights_keys = lights_notes = usb_full = 0;
  }
  printf("%-46s ok\n", "menu LIGHTS / KEYS / NOTES: keys, settings word");
+ { /* GLO > KIT: the kits in the browser's order (Jangada's own first; G_KIT keeps its old indices), a kit's
+    * beat into an empty or untouched drum track (not into the user's), KNOB 4 BEAT (twice over the user's) */
+   uint32_t pi; const track_t *td = TDRUM;
+   felucca_init(); ui.home = 0; song.sel = TRK_DRUM;
+   for (pi = 0; pi < NPAGES && strcmp(PAGES[pi].title, "KIT"); pi++) ;
+   assert(pi < NPAGES && PAGES[pi].id[3] == PG_BEAT); ui.page = (uint8_t)pi;
+   song.g[G_KIT] = 0; track_defaults_steps(TDRUM);
+   edit_param(0, 1); assert(!strcmp(DRUM_KIT_NAMES[drum_kit()], "RUST") && drum_kit() == DRUM_KITS - 5u);
+   assert(drums.beat && !strcmp(DS_BEATS[drums.beat - 1].name, "GRIND") && td->step[0].n == 2 && td->step[0].note[0] == 36);
+   edit_param(0, 1); assert(!strcmp(DRUM_KIT_NAMES[drum_kit()], "FORGE") && !strcmp(DS_BEATS[drums.beat - 1].name, "ANVIL"));
+   TDRUM->step[1].n = 1; TDRUM->step[1].note[0] = 49; TDRUM->step[1].time = ST_NOTE;   /* the user's now */
+   edit_param(0, 1); assert(!strcmp(DRUM_KIT_NAMES[drum_kit()], "PISTON") && td->step[1].note[0] == 49);
+   ui.arm = 0; edit_param(3, 1); assert(ui.arm == PG_BEAT && td->step[1].note[0] == 49);   /* armed, kept */
+   edit_param(3, 1); assert(!strcmp(DS_BEATS[drums.beat - 1].name, "ENGINE") && td->step[1].note[0] == 42);
+   edit_param(0, 1); edit_param(0, 1); assert(!strcmp(DRUM_KIT_NAMES[drum_kit()], "MANGUE"));
+   assert(!strcmp(DS_BEATS[drums.beat - 1].name, "MARACATU"));
+   edit_param(0, 1); assert(drum_kit() == 1u && !strcmp(DS_BEATS[drums.beat - 1].name, "MARACATU"));   /* 808: no beat of its own */
+   song.g[G_KIT] = 1; edit_param(0, -1); assert(!strcmp(DRUM_KIT_NAMES[drum_kit()], "MANGUE"));
+   song.g[G_KIT] = 0; edit_param(0, -1); assert(drum_kit() == 0u);                     /* the knob stops at GM */
+   song.t4 = 1; edit_param(3, 1); assert(!strcmp(DS_BEATS[drums.beat - 1].name, "MARACATU")); song.t4 = 0;
+   song.sel = 0;
+ }
+ printf("%-46s ok\n", "GLO > KIT: browser order, kit beats, BEAT (Jangada)");
  return 0;}

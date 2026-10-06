@@ -5,11 +5,13 @@
  * spirit of the classic drum machines. Every sound of a kit is one dsnd_t, written in musical units
  * by tools/gen_drumkits.py (felucca_drumkits.h). A sound is up to four layers into one filter:
  *   tone   SINE / TRI / SQUARE / FM / BELL (two squares 1 : 1.48), with an exponential pitch drop
- *          (BEND semitones over BTIME); its envelope HOLDs at full, then decays. A second partial
+ *          (BEND semitones over BTIME; Jangada: a negative BEND glides up to the note, at no cost);
+ *          its envelope HOLDs at full, then decays. A second partial
  *          (T2: a sine at RATIO x the tone, decaying twice as fast): the second mode of a drum head
  *   click  the attack: a 1-2 ms burst of bright noise (the beater, the stick)
  *   noise  WHITE / METAL (six squares at the 808 cymbal ratios) / CYM (metal + white) / CHIP
  *          (15-bit LFSR at its own clock); its own hold and decay. CLAP: three bursts, then the tail
+ *          (of any noise: METAL | CLAP is a chain, Jangada)
  *   filter a resonant state-variable filter (LP / BP / HP) on the noise, or on everything; its
  *          cutoff follows the pitch envelope (FENV) and the velocity (softer = darker); a
  *          12 dB/oct high-pass (HPF) on the noise before it
@@ -22,7 +24,9 @@ enum { DF_OFF, DF_LP, DF_BP, DF_HP, DF_ALL = 4 };   /* flt: mode | DF_ALL (the t
 typedef struct {
     uint8_t wave, src;           /* DW_*, DN_* (| DN_CLAP) */
     uint8_t pitch, fine;         /* the tone: MIDI note + 1/16 semitones (METAL / CYM: their base) */
-    uint8_t bend, btime;         /* pitch drop: semitones at the hit, DECAY_K index of its fall */
+    int8_t bend;                 /* pitch drop: semitones above the note at the hit (Jangada: < 0 below it:
+                                  * a glide up, the cuica), falling to it at DECAY_K index btime */
+    uint8_t btime;
     uint8_t hold, decay, tlev;   /* tone: hold (2 ms units), DECAY_K index, level 0..127 */
     uint8_t t2, t2lev;           /* second partial: ratio x32 (0 = none), level 0..127 */
     uint8_t click;               /* attack burst level 0..127 */
@@ -40,7 +44,13 @@ typedef struct {
     uint8_t crush;               /* low nibble: bits dropped, high nibble: sample-and-hold - 1 */
     dsnd_t s[DS_LANES];
 } dkit_t;
-#include "felucca_drumkits.h"    /* DS_KITS[], DS_NKITS (tools/gen_drumkits.py) */
+typedef struct {                 /* Jangada: a factory beat for the drum track (16 steps of GM notes) */
+    const char *name;
+    uint8_t note[16][4];         /* up to 4 hits a step, 0 = none */
+    uint8_t vel[16], flags[16];  /* step_t vel and flags (SF_ACCENT, SF_RATCH) */
+} dbeat_t;
+#include "felucca_drumkits.h"    /* DS_KITS[], DS_NKITS; Jangada: DS_BEATS[], DS_KIT_NAV[], DS_KIT_BEAT[]
+                                  * (tools/gen_drumkits.py) */
 
 /* GM note -> synth lane and a pitch offset in semitones */
 static const struct { uint8_t lane; int8_t semi; } DS_MAP[128 - 35] = {

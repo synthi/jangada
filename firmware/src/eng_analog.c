@@ -243,6 +243,12 @@ static const preset_t ANALOG_PRESETS[] = {
      SET({P_LRATE, 12}, {P_LD_FLT, 14})},
     {"HP SHIMMER", {0, 30, 64, 10, 70, 60, 0, 64}, {60, 90, 110, 100}, 0, 0, FX(0, 60, 50, 100), .x = {5, 81, 1, 21, 4},
      SET({P_LRATE, 9}, {P_LD_FLT, 20})},
+    /* Jangada: the Nordeste (with the MANGUE kit; SCL NORD or MIX) */
+    {"BAIAO BASS", {1, 8, 64, 0, 36, 40, 40, 50}, {0, 50, 60, 20}, 35, 1, FX(20, 0, 0, 10), PAT(12),
+     .x = {1, 1, 51, 11, 2}},                       /* round and plucked, + SUB, LP24 */
+    {"RABECA", {0, 8, 64, 12, 70, 60, 30, 40}, {40, 90, 127, 90}, 0, 0, FX(10, 30, 20, 80), ARP(7, 9, 1, 127),
+     .x = {1, 1, 1, 31, 3},                         /* the fiddle: nasal (BP), bow noise, its vibrato; a drone */
+     SET({P_AHOLD, 1}, {P_LRATE, 89}, {P_LD_PIT, 2})},
 };
 
 static void analog_render(track_t *t, voice_t *v, int32_t *out, uint32_t n, const vmod_t *m)

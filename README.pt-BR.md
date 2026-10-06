@@ -124,7 +124,17 @@ por trilha com o som, o motor, os passos e o playhead, o nível e os selos REC /
   8 patches de fábrica (PTCH F1–F8) e macros nos knobs (ALG FB MLVL MRAT MEG VMOD DTUN). O DIGITAL de
   4 operadores continua.
 - **Bateria sintetizada** (do SLOOP): **GLO → KIT**, ou o knob PRESETS na trilha de bateria: o kit GM
-  sampleado ou 32 kits sintetizados (808, 909, TECHNO, INDUSTR, GLITCH, DUBSTEP, JUNGLE…).
+  sampleado ou 37 kits sintetizados (808, 909, TECHNO, INDUSTR, GLITCH, DUBSTEP, JUNGLE…).
+- **Kits da Jangada**, os primeiros da lista: **RUST** (industrial seco: bumbo distorcido, caixa com
+  gate, hats esmagados), **FORGE** (bigorna, correntes, chapas: metal que soa), **PISTON** (máquinas:
+  estalos, vapor, válvulas), **HURT** (baixo, abafado, respirado) e **MANGUE** (alfaia, zabumba e
+  bacalhau, caixa de maracatu, gonguê, agogô, cuíca, ganzá, triângulo, palmas, com o peso do mangue).
+- **Batidas de fábrica** (**GLO → KIT**, knob 4 **BEAT**): MARACATU (baque virado), BAIAO, COCO,
+  GRIND, ANVIL, ENGINE, FRAGILE. Num kit da Jangada com a trilha de bateria vazia, a batida dele já
+  vem junto; sobre um padrão seu, o BEAT pede uma segunda volta do knob.
+- **Nordeste**: a escala **NORD** (SCL; mixolídio com a 4ª aumentada, o modo nordestino: use NORD ou
+  MIX no baião, DOR no xote e na toada), e os presets **BAIAO BASS** e **RABECA** (ANALOG) e
+  **SANFONA** (WHEEL), estes dois em drone.
 - **Reverbs** (**FX → REVERB**, TYPE): ROOM (a de sempre), SPRING (mola, do Felucca 1.0) e PLATE
   (rede de atrasos estéreo, do SLOOP).
 
