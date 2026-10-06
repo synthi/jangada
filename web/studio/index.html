@@ -1,0 +1,502 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-only
+     Jangada Studio: the Jangada's sound in the browser, without the FM-1. The firmware's DSP (engine.c,
+     built to engine.wasm by tools/build_studio.py) runs in an AudioWorklet (worklet.js). -->
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jangada Studio</title>
+<style>
+  :root { --bg: #fff; --fg: #000; --dim: #777; --line: #ddd; --surf: #f6f2f5; --hot: #e0068f; --on: #fff; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg: #0a0207; --fg: #fff; --dim: #8a7a85; --line: #3a1a30; --surf: #1a0913; --hot: #ff14aa; --on: #0a0207; }
+  }
+  :root[data-theme="dark"] { --bg: #0a0207; --fg: #fff; --dim: #8a7a85; --line: #3a1a30; --surf: #1a0913; --hot: #ff14aa; --on: #0a0207; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+         font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 32px 16px 48px; }
+  h1 { font-size: 24px; font-weight: 600; margin: 0 0 4px; letter-spacing: .02em; }
+  h1 b { color: var(--hot); font-weight: 600; }
+  h2 { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin: 0 0 10px; }
+  p { margin: 0 0 12px; }
+  a { color: inherit; }
+  .small { color: var(--dim); font-size: 13px; }
+  .lang { float: right; font: inherit; font-size: 13px; background: none; border: 0; color: var(--dim); text-decoration: underline; cursor: pointer; padding: 0; }
+  button, select { font: inherit; font-size: 14px; color: var(--fg); background: var(--surf); border: 1px solid var(--line);
+                   padding: 6px 12px; cursor: pointer; border-radius: 0; }
+  button:hover { border-color: var(--hot); }
+  button.on, button.main { background: var(--hot); color: var(--on); border-color: var(--hot); }
+  button.main { font-size: 16px; padding: 10px 24px; font-weight: 600; }
+  select { padding: 6px 8px; max-width: 100%; }
+  input[type=range] { width: 100%; margin: 0; accent-color: var(--hot); }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px 16px; }
+  section { border-top: 1px solid var(--line); padding: 18px 0 14px; }
+  .ctl label { display: flex; justify-content: space-between; font-size: 12px; letter-spacing: .06em; color: var(--dim); }
+  .ctl label span:last-child { color: var(--fg); font-variant-numeric: tabular-nums; }
+  .tabs { display: flex; gap: 0; margin-bottom: 14px; }
+  .tabs button { flex: 1; text-align: left; padding: 8px 10px; border-right-width: 0; min-width: 0; }
+  .tabs button:last-child { border-right-width: 1px; }
+  .tabs button small { display: block; font-size: 11px; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tabs button.on small { opacity: .9; }
+  #preset { flex: 1; min-width: 180px; }
+  #steps { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 12px; }
+  #steps i { width: 14px; height: 14px; border: 1px solid var(--line); display: block; }
+  #steps i.note { background: var(--line); }
+  #steps i.now { background: var(--hot); border-color: var(--hot); }
+  canvas#scope { width: 100%; height: 110px; display: block; background: var(--surf); color: var(--hot); --scope-grid: var(--line); }
+  #kbd { position: relative; height: 150px; margin: 12px 0 8px; user-select: none; touch-action: none; }
+  #kbd div { position: absolute; top: 0; border: 1px solid var(--line); display: flex; align-items: flex-end; justify-content: center;
+             font-size: 11px; color: var(--dim); padding-bottom: 6px; cursor: pointer; text-align: center; line-height: 1.1; overflow: hidden; }
+  #kbd .w { height: 100%; background: #f7f1f5; color: #6a5a65; border-color: #c9b9c4; }
+  #kbd .b { height: 60%; background: #1a0913; color: #b9a9b4; z-index: 1; border-color: #1a0913; }
+  #kbd div.down { background: var(--hot); color: var(--on); border-color: var(--hot); }
+  #kbd.fx .w { color: #e0068f; font-weight: 600; }
+  #status { min-height: 1.5em; }
+  .drone { color: var(--hot); font-weight: 600; }
+  footer { margin-top: 28px; }
+  kbd { font: 12px ui-monospace, Menlo, monospace; border: 1px solid var(--line); padding: 0 4px; }
+  @media (max-width: 560px) { .tabs button small { display: none; } #kbd { height: 120px; } }
+</style>
+</head>
+<body>
+<main>
+  <button class="lang" id="lang"></button>
+  <h1>JANGADA <b>STUDIO</b></h1>
+  <p class="small" data-t="intro"></p>
+  <p class="row"><button class="main" id="power" data-t="power"></button> <span id="status" class="small"></span></p>
+
+  <section>
+    <div class="tabs" id="tabs"></div>
+    <div id="synth">
+      <div class="row">
+        <button id="prev" aria-label="prev">‹</button><select id="preset"></select><button id="next" aria-label="next">›</button>
+      </div>
+      <div class="grid" id="macros" style="margin-top:14px"></div>
+    </div>
+    <div id="drums" hidden>
+      <div class="grid">
+        <div class="ctl"><label><span data-t="kit"></span></label><select id="kit"></select></div>
+        <div class="ctl" data-g="G_DRLVL"></div>
+        <div class="ctl" data-g="G_DRREV"></div>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px"><span class="small" data-t="t4"></span> <select id="t4"></select></div>
+  </section>
+
+  <section id="arp">
+    <h2 data-t="droneTitle"></h2>
+    <div class="row">
+      <button id="hold" data-t="hold"></button>
+      <button id="release" data-t="release"></button>
+      <span id="droning" class="drone"></span>
+    </div>
+    <div class="grid" style="margin-top:12px">
+      <div class="ctl" data-p="P_AMODE"></div>
+      <div class="ctl" data-p="P_ARATE"></div>
+      <div class="ctl" data-p="P_CHORD"></div>
+      <div class="ctl" data-p="P_SCALE"></div>
+      <div class="ctl" data-p="P_ROOT"></div>
+    </div>
+    <p class="small" style="margin-top:10px" data-t="droneHelp"></p>
+  </section>
+
+  <section>
+    <h2 data-t="seqTitle"></h2>
+    <div class="row">
+      <button id="play" class="main" data-t="play"></button>
+      <div class="ctl" data-g="G_BPM" style="flex:1;min-width:200px"></div>
+    </div>
+    <div id="steps"></div>
+  </section>
+
+  <section>
+    <h2 data-t="masterTitle"></h2>
+    <div class="grid">
+      <div class="ctl" data-g="G_DUST"></div>
+      <div class="ctl" data-g="G_DUCK"></div>
+      <div class="ctl" data-g="G_FILT"></div>
+      <div class="ctl" data-g="G_RTYPE"></div>
+      <div class="ctl" data-g="G_RSIZE"></div>
+      <div class="ctl" data-p="P_REV"></div>
+      <div class="ctl" data-p="P_DLY"></div>
+      <div class="ctl"><label><span data-t="volume"></span><span id="volv"></span></label><input type="range" id="vol" min="0" max="100" value="70"></div>
+    </div>
+    <canvas id="scope" style="margin-top:16px"></canvas>
+  </section>
+
+  <section>
+    <h2 data-t="keysTitle"></h2>
+    <div class="row">
+      <button id="octdn">OCT −</button><span id="oct" class="small"></span><button id="octup">OCT +</button>
+      <button id="fx" data-t="fx"></button><span id="punch" class="drone"></span>
+    </div>
+    <div id="kbd"></div>
+    <p class="small" data-t="keysHelp"></p>
+    <p class="small" id="midi"></p>
+  </section>
+
+  <footer class="small">
+    <p data-t="about"></p>
+    <p>Jangada: a fork of Felucca by Leo Kuroshita (@kurogedelic), <a href="https://hugelton.com" target="_blank" rel="noopener">Hügelton Instruments</a>, with parts of <a href="https://github.com/isod89/sloop-fm1" target="_blank" rel="noopener">SLOOP</a> (isod89) and msfa / Dexed (FM6, Apache-2.0).
+      <span data-t="salt"></span> <a href="https://github.com/ChanceTheMaker/Felucca" target="_blank" rel="noopener">Felucca [Salt]</a> (Chance Roth, GPL-3.0).<br>
+      Samples: Versilian Studios VSCO-2 CE and VCSL (CC0 1.0), and the Hügelton Sample Pack (© Hügelton Instruments, not CC0). M-VAVE and FM-1 are trademarks of their respective owners.<br>
+      <span data-t="license"></span> <a href="https://github.com/zednaked/jangada" target="_blank" rel="noopener">github.com/zednaked/jangada</a> ·
+      <a href="../installer/" data-t="installer"></a> · <a href="../editor/" data-t="editor"></a></p>
+  </footer>
+</main>
+<script type="module">
+/*TEXT-BEGIN*/
+const TEXT = {
+  pt: {
+    intro: "O som da Jangada no navegador, sem o FM-1: o mesmo código do firmware (motores, drones, kits, sequenciador, master), compilado para WebAssembly. Toque com o teclado do computador ou um teclado MIDI.",
+    power: "Ligar o som", powerOff: "Desligar", starting: "Ligando…", running: "Som ligado",
+    noaudio: "Este navegador não tem Web Audio (AudioWorklet). Use um Chrome, Edge, Firefox ou Safari recente.",
+    failed: "O som não ligou: ", engineFail: "O motor de áudio (engine.wasm) não carregou.",
+    track: "Trilha", drumsTab: "Bateria", kit: "KIT", t4: "Trilha 4:", t4drum: "bateria", t4synth: "sintetizador",
+    droneTitle: "Drone", hold: "HOLD (segura o acorde)", release: "Soltar drones",
+    droneHelp: "Os presets DRONE já vêm com ARP RPT e HOLD: toque um acorde, solte as teclas e ele fica respirando sozinho. Toque outro acorde para trocar; Esc ou \"Soltar drones\" para parar (de novo: silencia as caudas).",
+    droning: "drone soando nas trilhas ",
+    seqTitle: "Sequenciador", play: "PLAY", stop: "STOP",
+    masterTitle: "Master e efeitos", volume: "VOLUME",
+    keysTitle: "Teclado", fx: "FX (Shift)",
+    keysHelp: "As 27 teclas do FM-1 (Fá a Sol): fileira de baixo Z X C V B N M , . / (brancas) e S D F H J L ; (pretas); fileira de cima Q W E R T Y U I O (brancas) e 2 3 4 6 7 9 (pretas). − e = mudam a oitava, Espaço é PLAY, Esc solta os drones. Segure Shift (ou FX) e toque uma tecla branca: efeitos punch-in na mixagem.",
+    midiNone: "MIDI: nenhum teclado MIDI conectado.", midiOn: "MIDI: tocando a trilha selecionada a partir de ",
+    midiNo: "MIDI: este navegador não tem WebMIDI.", midiDenied: "MIDI: acesso não permitido.",
+    about: "Este Studio roda no seu navegador; nada é enviado. O som é o do firmware, amostra por amostra (o teste confere o WebAssembly contra o mesmo código compilado no PC). O FM-1 em si não é necessário.",
+    salt: "O áudio no navegador segue o do",
+    license: "GPL-3.0, sem garantia. Código-fonte:", installer: "Instalador", editor: "Editor",
+  },
+  en: {
+    intro: "Jangada's sound in the browser, without the FM-1: the firmware's own code (engines, drones, kits, sequencer, master), compiled to WebAssembly. Play it with the computer keyboard or a MIDI keyboard.",
+    power: "Start the sound", powerOff: "Stop", starting: "Starting…", running: "Sound on",
+    noaudio: "This browser has no Web Audio (AudioWorklet). Use a recent Chrome, Edge, Firefox or Safari.",
+    failed: "The sound did not start: ", engineFail: "The audio engine (engine.wasm) did not load.",
+    track: "Track", drumsTab: "Drums", kit: "KIT", t4: "Track 4:", t4drum: "drums", t4synth: "synth",
+    droneTitle: "Drone", hold: "HOLD (keeps the chord)", release: "Let the drones go",
+    droneHelp: "The DRONE presets come with ARP RPT and HOLD: play a chord, let go of the keys and it keeps breathing on its own. Play another chord to change it; Esc or \"Let the drones go\" to stop (again: silences the tails).",
+    droning: "drone sounding on tracks ",
+    seqTitle: "Sequencer", play: "PLAY", stop: "STOP",
+    masterTitle: "Master and effects", volume: "VOLUME",
+    keysTitle: "Keyboard", fx: "FX (Shift)",
+    keysHelp: "The FM-1's 27 keys (F to G): bottom row Z X C V B N M , . / (white) and S D F H J L ; (black); top row Q W E R T Y U I O (white) and 2 3 4 6 7 9 (black). − and = change the octave, Space is PLAY, Esc lets the drones go. Hold Shift (or FX) and play a white key: punch-in effects on the mix.",
+    midiNone: "MIDI: no MIDI keyboard connected.", midiOn: "MIDI: playing the selected track from ",
+    midiNo: "MIDI: this browser has no WebMIDI.", midiDenied: "MIDI: access not allowed.",
+    about: "This Studio runs in your browser; nothing is sent anywhere. The sound is the firmware's, sample for sample (the test checks the WebAssembly against the same code built on a PC). The FM-1 itself is not needed.",
+    salt: "The browser audio follows that of",
+    license: "GPL-3.0, no warranty. Source:", installer: "Installer", editor: "Editor",
+  },
+};
+/*TEXT-END*/
+const $ = (id) => document.getElementById(id);
+let lang = (navigator.language || "en").toLowerCase().startsWith("pt") ? "pt" : "en";
+try { const l = localStorage.getItem("jangada-lang"); if (l in TEXT) lang = l; } catch (e) { /* no storage */ }
+const t = (k) => TEXT[lang][k];
+
+/* ---- the engine: a copy on this thread holds the state the page shows (no audio); every call goes to it
+ * and to the worklet's, which plays. Calls before the sound starts are replayed into the worklet. */
+const wasmBytes = await fetch(new URL("engine.wasm", import.meta.url)).then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+  .catch(() => null);
+let module = null, x = null;
+if (wasmBytes) { module = await WebAssembly.compile(wasmBytes); x = new WebAssembly.Instance(module, {}).exports; x.st_init(); }
+const str = (p) => { if (!p) return ""; const b = new Uint8Array(x.memory.buffer); let e = p; while (b[e]) e++; return new TextDecoder().decode(b.subarray(p, e)); };
+const ID = {};
+if (x) for (let k = 0; x.st_id_name(k); k++) ID[str(x.st_id_name(k))] = x.st_id(k);
+const TRANSIENT = new Set(["st_keys", "st_midi", "st_drone_off", "st_panic", "st_fx_layer"]);
+const log = [];
+let node = null, ctx = null, gain = null, analyser = null, queue = [];
+function call(fn, ...args) {
+  if (!x) return;
+  x[fn](...args);
+  if (!TRANSIENT.has(fn)) log.push([fn, ...args]);
+  if (!node) return;
+  if (!queue.length) queueMicrotask(() => { node?.port.postMessage(queue); queue = []; });
+  queue.push([fn, ...args]);
+}
+
+/* ---- audio */
+let live = { playing: 0, steps: [0, 0, 0, 0], droning: 0, voices: 0, punch: -1 };
+async function power() {
+  if (ctx) {
+    if (ctx.state === "running") { call("st_panic"); await ctx.suspend(); } else await ctx.resume();
+    showPower(); return;
+  }
+  if (!x) { $("status").textContent = t("engineFail"); return; }
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx || !window.AudioWorkletNode) { $("status").textContent = t("noaudio"); return; }
+  $("status").textContent = t("starting");
+  try {
+    try { ctx = new Ctx({ sampleRate: 44100, latencyHint: "interactive" }); } catch (e) { ctx = new Ctx({ latencyHint: "interactive" }); }
+    await ctx.audioWorklet.addModule(new URL("worklet.js", import.meta.url));
+    node = new AudioWorkletNode(ctx, "jangada-dsp", { numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: { module } });
+    node.port.postMessage([...log, ["st_keys", held.reduce((b, n, k) => n > 0 ? b | 1 << k : b, 0)]]);
+    node.port.onmessage = ({ data }) => { live = data; showLive(); };
+    node.onprocessorerror = () => { gain.gain.value = 0; $("status").textContent = t("failed") + "processor"; };
+    gain = ctx.createGain(); setVolume();
+    analyser = ctx.createAnalyser(); analyser.fftSize = 2048;
+    node.connect(gain).connect(ctx.destination); gain.connect(analyser);
+    await ctx.resume();
+    scope();
+    midiStart();
+  } catch (e) {
+    $("status").textContent = t("failed") + e.message;
+    ctx?.close(); ctx = node = null; return;
+  }
+  showPower();
+}
+function showPower() {
+  const on = ctx?.state === "running";
+  $("power").textContent = t(on ? "powerOff" : "power");
+  $("power").classList.toggle("main", !on);
+  $("status").textContent = on ? `${t("running")} · ${ctx.sampleRate} Hz` : "";
+}
+const ensure = () => { if (!ctx || ctx.state !== "running") power(); };
+function setVolume() {
+  const v = +$("vol").value;
+  $("volv").textContent = v + "%";
+  gain?.gain.setTargetAtTime((v / 100) ** 2, ctx.currentTime, 0.02);
+}
+
+/* ---- controls */
+let sel = 0;
+const pid = (name) => ID[name];
+function ctlRange(box, label, min, max, get, set, text) {
+  box.innerHTML = "";
+  const l = document.createElement("label"), a = document.createElement("span"), b = document.createElement("span");
+  a.textContent = label; l.append(a, b);
+  const r = Object.assign(document.createElement("input"), { type: "range", min, max, value: get() });
+  r.oninput = () => { set(+r.value); b.textContent = text(); };
+  b.textContent = text();
+  box.append(l, r);
+}
+function ctlSelect(box, label, names, get, set, text) {
+  box.innerHTML = "";
+  const l = document.createElement("label"), a = document.createElement("span");
+  a.textContent = label; l.append(a);
+  const s = document.createElement("select");
+  names.forEach(([v, n]) => s.add(new Option(n, v)));
+  s.value = get();
+  s.onchange = () => { set(+s.value); s.blur(); refresh(); };
+  box.append(l, s);
+}
+function paramCtl(box, track, id) {
+  const label = str(x.st_param_label(track, id)), min = x.st_param_min(track, id), max = x.st_param_max(track, id);
+  const get = () => x.st_param_get(track, id), set = (v) => call("st_param", track, id, v), text = () => str(x.st_param_text(track, id));
+  if (x.st_param_name(track, id, min)) {
+    const names = []; for (let v = min; v <= max; v++) names.push([v, str(x.st_param_name(track, id, v))]);
+    ctlSelect(box, label, names, get, set, text);
+  } else ctlRange(box, label, min, max, get, set, text);
+}
+function globalCtl(box, id) {
+  const name = { [ID.G_DRLVL]: "DRUM LVL", [ID.G_DRREV]: "DRUM REV", [ID.G_RTYPE]: "REVERB", [ID.G_RSIZE]: "REV SIZE" }[id]
+    || Object.keys(ID).find((k) => ID[k] === id && k.startsWith("G_")).slice(2);
+  const min = x.st_global_min(id), max = x.st_global_max(id);
+  const get = () => x.st_global_get(id), set = (v) => call("st_global", id, v), text = () => str(x.st_global_text(id));
+  if (x.st_global_name(id, min)) {
+    const names = []; for (let v = min; v <= max; v++) names.push([v, str(x.st_global_name(id, v))]);
+    ctlSelect(box, name, names, get, set, text);
+  } else ctlRange(box, name, min, max, get, set, text);
+}
+
+function tabs() {
+  const box = $("tabs"); box.innerHTML = "";
+  for (let i = 0; i < 4; i++) {
+    const b = document.createElement("button"), drum = x.st_is_drum(i);
+    const name = drum ? `${t("drumsTab")} · ${str(x.st_global_name(ID.G_KIT, x.st_global_get(ID.G_KIT)))}`
+      : str(x.st_preset_name(x.st_track_engine(i), x.st_track_preset(i)));
+    b.innerHTML = `${t("track")} ${i + 1}<small></small>`;
+    b.querySelector("small").textContent = drum ? name : `${str(x.st_engine_name(x.st_track_engine(i)))} · ${name}`;
+    b.classList.toggle("on", i === sel);
+    b.onclick = () => { sel = i; call("st_select", i); refresh(); };
+    box.append(b);
+  }
+}
+function presets() {
+  const s = $("preset"); s.innerHTML = "";
+  for (let e = 0; e < x.st_engines(); e++) {
+    const g = document.createElement("optgroup"); g.label = str(x.st_engine_name(e));
+    for (let p = 0; p < x.st_presets(e); p++) g.append(new Option(str(x.st_preset_name(e, p)), `${e}:${p}`));
+    s.append(g);
+  }
+}
+function choose(e, p) {
+  if (x.st_track_engine(sel) !== e) call("st_engine", sel, e);
+  call("st_preset", sel, p);
+  refresh();
+}
+function step(d) {
+  const all = [...$("preset").options].map((o) => o.value), i = all.indexOf($("preset").value);
+  const [e, p] = all[(i + d + all.length) % all.length].split(":").map(Number);
+  choose(e, p);
+}
+function refresh() {
+  if (!x) return;
+  tabs();
+  const drum = !!x.st_is_drum(sel);
+  $("synth").hidden = drum; $("drums").hidden = !drum; $("arp").hidden = drum;
+  if (!drum) {
+    $("preset").value = `${x.st_track_engine(sel)}:${x.st_track_preset(sel)}`;
+    const m = $("macros"); m.innerHTML = "";
+    for (let k = 0; k < 4; k++) { const d = document.createElement("div"); d.className = "ctl"; m.append(d); paramCtl(d, sel, x.st_macro(sel, k)); }
+    document.querySelectorAll("[data-p]").forEach((d) => paramCtl(d, sel, pid(d.dataset.p)));
+    $("hold").classList.toggle("on", !!x.st_param_get(sel, ID.P_AHOLD));
+  } else {
+    const kit = $("kit"); kit.innerHTML = "";
+    for (let k = 0; k < x.st_kits(); k++) kit.add(new Option(str(x.st_global_name(ID.G_KIT, k)), k));
+    kit.value = x.st_global_get(ID.G_KIT);
+    document.querySelectorAll("[data-p]").forEach((d) => paramCtl(d, sel, pid(d.dataset.p)));
+  }
+  document.querySelectorAll("[data-g]").forEach((d) => globalCtl(d, pid(d.dataset.g)));
+  const t4 = $("t4"); t4.innerHTML = "";
+  t4.add(new Option(t("t4drum"), 0)); t4.add(new Option(t("t4synth"), 1)); t4.value = x.st_global_get(ID.G_T4);
+  $("oct").textContent = (x.st_octave_get() > 0 ? "+" : "") + x.st_octave_get();
+  steps(); showLive();
+}
+function steps() {
+  const box = $("steps"), len = x.st_param_get(sel, ID.P_SLEN);
+  if (box.children.length !== len) { box.innerHTML = ""; for (let i = 0; i < len; i++) box.append(document.createElement("i")); }
+}
+function showLive() {
+  if (!x) return;
+  $("play").textContent = t(live.playing ? "stop" : "play");
+  $("play").classList.toggle("on", !!live.playing);
+  const box = $("steps"), now = live.steps[sel];
+  [...box.children].forEach((d, i) => d.className = live.playing && i === now ? "now" : x.st_step_on(sel, i) ? "note" : "");
+  const tr = [0, 1, 2, 3].filter((i) => live.droning >> i & 1).map((i) => i + 1);
+  $("droning").textContent = tr.length ? t("droning") + tr.join(", ") : "";
+  $("punch").textContent = live.punch >= 0 ? str(x.st_punch_name(live.punch)) : "";
+}
+
+/* ---- the keys: the FM-1's 27 (F3 + k), by the physical key (event.code) */
+const CODES = ["KeyZ", "KeyS", "KeyX", "KeyD", "KeyC", "KeyF", "KeyV", "KeyB", "KeyH", "KeyN", "KeyJ", "KeyM",
+  "Comma", "KeyL", "Period", "Semicolon", "Slash"];                       // k 0..16 (F3 .. A4)
+const UPPER = ["KeyQ", "Digit2", "KeyW", "Digit3", "KeyE", "Digit4", "KeyR", "KeyT", "Digit6", "KeyY", "Digit7", "KeyU",
+  "KeyI", "Digit9", "KeyO"];                                              // k 12..26 (F4 .. G5)
+const KEY_OF = {};
+CODES.forEach((c, k) => (KEY_OF[c] = k));
+UPPER.forEach((c, i) => (KEY_OF[c] = 12 + i));
+const LABEL = Array.from({ length: 27 }, () => []);
+for (const [c, k] of Object.entries(KEY_OF)) LABEL[k].push(c.replace(/^Key|^Digit/, "").replace("Comma", ",").replace("Period", ".").replace("Semicolon", ";").replace("Slash", "/"));
+const BLACK = (k) => [1, 3, 5, 8, 10].includes(k % 12);
+const held = new Array(27).fill(0);
+let fxOn = false;
+function sendKeys() {
+  let bits = 0; held.forEach((n, k) => { if (n > 0) bits |= 1 << k; });
+  call("st_keys", bits);
+  [...$("kbd").children].forEach((d) => d.classList.toggle("down", held[+d.dataset.k] > 0));
+}
+function press(k, d) { held[k] = Math.max(0, held[k] + d); if (d > 0) ensure(); sendKeys(); }
+function setFx(on) {
+  if (on === fxOn) return;
+  fxOn = on; call("st_fx_layer", on ? 1 : 0);
+  $("fx").classList.toggle("on", on); $("kbd").classList.toggle("fx", on); keyboard();
+}
+function keyboard() {
+  const box = $("kbd"); box.innerHTML = "";
+  const whites = [...Array(27).keys()].filter((k) => !BLACK(k)), w = 100 / whites.length;
+  for (let k = 0; k < 27; k++) {
+    const d = document.createElement("div"), wi = whites.filter((v) => v < k).length;
+    d.dataset.k = k;
+    if (BLACK(k)) { d.className = "b"; d.style.left = `${wi * w - w * 0.3}%`; d.style.width = `${w * 0.6}%`; }
+    else { d.className = "w"; d.style.left = `${wi * w}%`; d.style.width = `${w}%`; }
+    const punch = fxOn && !BLACK(k) && x ? str(x.st_punch_name(Math.floor(k / 12) * 7 + [0, -1, 1, -1, 2, -1, 3, 4, -1, 5, -1, 6][k % 12])) : "";
+    d.innerText = punch || LABEL[k].join(" ");
+    d.classList.toggle("down", held[k] > 0);
+    d.onpointerdown = (e) => { d.setPointerCapture(e.pointerId); d.dataset.p = 1; press(k, 1); };
+    d.onpointerup = d.onpointercancel = () => { if (d.dataset.p) { delete d.dataset.p; press(k, -1); } };
+    box.append(d);
+  }
+}
+const down = new Set();
+addEventListener("keydown", (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.tagName === "SELECT" || e.target.tagName === "INPUT" && e.target.type !== "range") return;
+  if (e.key === "Shift") { setFx(true); return; }
+  if (e.code === "Space") { e.preventDefault(); if (!e.repeat) { ensure(); call("st_play", live.playing ? 0 : 1); live.playing ^= 1; showLive(); } return; }
+  if (e.code === "Escape") { call("st_drone_off"); return; }
+  if (e.code === "Minus" || e.code === "Equal") { octave(e.code === "Minus" ? -1 : 1); return; }
+  const k = KEY_OF[e.code];
+  if (k === undefined) return;
+  e.preventDefault();
+  if (e.repeat || down.has(e.code)) return;
+  down.add(e.code); press(k, 1);
+});
+addEventListener("keyup", (e) => {
+  if (e.key === "Shift") { setFx(false); return; }
+  if (down.delete(e.code)) press(KEY_OF[e.code], -1);
+});
+addEventListener("blur", () => { down.forEach((c) => press(KEY_OF[c], -1)); down.clear(); setFx(false); });
+function octave(d) { call("st_octave", x.st_octave_get() + d); refresh(); }
+
+/* ---- MIDI in: notes, controllers, bend and aftertouch to the selected track (channel 16 reaches it) */
+let midiAccess = null;
+async function midiStart() {
+  if (!navigator.requestMIDIAccess) { $("midi").textContent = t("midiNo"); return; }
+  try { midiAccess = await navigator.requestMIDIAccess(); } catch (e) { $("midi").textContent = t("midiDenied"); return; }
+  const hook = () => {
+    const names = [];
+    midiAccess.inputs.forEach((i) => {
+      names.push(i.name);
+      i.onmidimessage = ({ data }) => {
+        const s = data[0] & 0xf0;
+        if (s >= 0x80 && s <= 0xe0 && s !== 0xc0) { if (s === 0x90 && data[2]) ensure(); call("st_midi", s | 0x0f, data[1] | 0, data[2] | 0); }
+      };
+    });
+    $("midi").textContent = names.length ? t("midiOn") + names.join(", ") : t("midiNone");
+  };
+  midiAccess.onstatechange = hook; hook();
+}
+
+/* ---- the scope */
+function scope() {
+  const c = $("scope"), g = c.getContext("2d"), data = new Float32Array(2048);
+  const draw = () => {
+    const r = Math.min(devicePixelRatio || 1, 2), w = Math.round(c.clientWidth * r), h = Math.round(c.clientHeight * r);
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    const st = getComputedStyle(c);
+    g.clearRect(0, 0, w, h);
+    g.strokeStyle = st.getPropertyValue("--scope-grid"); g.lineWidth = r; g.beginPath();
+    for (let i = 1; i < 8; i++) { g.moveTo(w * i / 8, 0); g.lineTo(w * i / 8, h); }
+    g.moveTo(0, h / 2); g.lineTo(w, h / 2); g.stroke();
+    data.fill(0);
+    if (ctx?.state === "running") analyser.getFloatTimeDomainData(data);
+    let s = 0;
+    for (let i = 1; i < 1024; i++) if (data[i - 1] <= 0 && data[i] > 0.002) { s = i; break; }
+    g.strokeStyle = st.color; g.lineWidth = 1.5 * r; g.beginPath();
+    for (let i = 0; i < 1024; i++) { const X = i * w / 1023, Y = h / 2 - Math.max(-1, Math.min(1, data[s + i] * 1.5)) * h * 0.46; i ? g.lineTo(X, Y) : g.moveTo(X, Y); }
+    g.stroke();
+    requestAnimationFrame(draw);
+  };
+  draw();
+}
+
+/* ---- wiring */
+function applyLang() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-t]").forEach((e) => (e.textContent = t(e.dataset.t)));
+  $("lang").textContent = lang === "pt" ? "English" : "Português";
+  showPower(); refresh();
+  if (midiAccess) midiAccess.onstatechange();
+}
+$("lang").onclick = () => { lang = lang === "pt" ? "en" : "pt"; try { localStorage.setItem("jangada-lang", lang); } catch (e) { /* */ } applyLang(); };
+$("power").onclick = power;
+$("preset").onchange = () => { const [e, p] = $("preset").value.split(":").map(Number); $("preset").blur(); choose(e, p); };
+$("prev").onclick = () => step(-1);
+$("next").onclick = () => step(1);
+$("kit").onchange = () => { call("st_global", ID.G_KIT, +$("kit").value); $("kit").blur(); refresh(); };
+$("t4").onchange = () => { call("st_global", ID.G_T4, +$("t4").value); $("t4").blur(); refresh(); };
+$("hold").onclick = () => { call("st_param", sel, ID.P_AHOLD, x.st_param_get(sel, ID.P_AHOLD) ? 0 : 1); refresh(); };
+$("release").onclick = () => call("st_drone_off");
+$("play").onclick = () => { ensure(); call("st_play", live.playing ? 0 : 1); live.playing ^= 1; showLive(); };
+$("vol").oninput = setVolume;
+$("octdn").onclick = () => octave(-1);
+$("octup").onclick = () => octave(1);
+$("fx").onpointerdown = () => setFx(!fxOn);
+if (x) { presets(); keyboard(); }
+applyLang(); setVolume();
+if (!x) $("status").textContent = t("engineFail");
+</script>
+</body>
+</html>

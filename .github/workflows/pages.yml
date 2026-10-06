@@ -1,4 +1,5 @@
-# Jangada site (GitHub Pages): the web installer and the web editor, with the newest released package.
+# Jangada site (GitHub Pages): the web installer, the web editor and the Studio (the firmware's DSP as
+# WebAssembly, built here with Zig: tools/build_studio.py), with the newest released package.
 # Runs after a release (release.yml starts it) or by hand (Actions > pages > Run workflow).
 name: pages
 on:
@@ -21,6 +22,11 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2           # the Studio's wasm32 compiler (zig cc)
+        with:
+          version: 0.14.1
+      - name: The Studio's engine (WebAssembly)
+        run: python3 tools/build_studio.py
       - name: The newest release's package
         env:
           GH_TOKEN: ${{ github.token }}

@@ -79,6 +79,24 @@ cost (`tests/cpu_baseline.txt`, `tests/target_budget.txt`). After an intended ch
 the sound, `GOLDEN_UPDATE=1 sh tests/run_tests.sh` rewrites the hashes; `BUDGET_UPDATE=1`
 does the same for the cost files.
 
+## Studio (the sound in the browser)
+
+The site's Studio (`web/studio/`) plays Jangada without the FM-1: the firmware's DSP
+(`firmware/src`, #included by `web/studio/engine.c`, as the host tests do) compiled to
+WebAssembly and run in an AudioWorklet. It needs Zig (its clang targets wasm32); no root:
+
+```
+python3 tools/build_studio.py --get-zig     # Zig 0.14.1 into ~/.local (once)
+python3 tools/build_studio.py --native      # build/studio/engine.wasm (+ the same C for this computer)
+node web/test_studio.mjs                    # sound, and wasm == native bit for bit
+python3 web/make_site.py build/felucca.fwsc dev /tmp/jangada-site
+cd /tmp/jangada-site && python3 -m http.server 8000
+# open http://localhost:8000/webapp/studio/
+```
+
+`tests/run_tests.sh` runs the Studio test when Zig is there and skips it otherwise.
+After Felucca [Salt]'s browser audio (Chance Roth).
+
 ## Install
 
 Use the web installer in Chrome or Edge:

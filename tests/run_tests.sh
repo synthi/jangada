@@ -112,6 +112,15 @@ run "installer CLI (fm1_install.py) against a simulated FM-1" python3 tests/inst
 if command -v node >/dev/null 2>&1; then
     run "web pages: editor protocol, samples, packages, update protocol" node web/test_web.mjs
     run "web backup module (fm1backup.js, Jangada)" node web/test_backup.mjs
+    # Studio (web/studio): the DSP as WebAssembly, needs zig (python3 tools/build_studio.py --get-zig)
+    st=0; python3 tools/build_studio.py --native >/dev/null || st=$?
+    if [ $st -eq 0 ]; then
+        run "Studio: the DSP as WebAssembly == the host build, sound, page (Jangada)" node web/test_studio.mjs
+    elif [ $st -eq 2 ]; then
+        echo "== skip Studio test (no zig: python3 tools/build_studio.py --get-zig)"
+    else
+        echo "== Studio: tools/build_studio.py failed"; fail=1
+    fi
 else
     echo "== skip web tests (no node)"
 fi
