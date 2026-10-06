@@ -6,7 +6,8 @@
 // - editor.html: the protocol section (between PROTO-BEGIN/END) against its mock device (v1 commands,
 //   the user preset bank / librarian, library files, live pushes, older-firmware fallback, the v3 tracks
 //   and the mixer), its tab layout and ja/en strings,
-//   and the user-sample pipeline byte for byte against tools/sampleio.py
+//   and the user-sample pipeline byte for byte against tools/sampleio.py; the CHOP helpers (hits, TAP snap,
+//   grid, keep / leave out, own lengths, Fit to slot, the slot, WAV and ZIP writers)
 // - fm1pkg.js: productOf and logicalImage on build/felucca.fwsc (skipped without a build)
 // - fm1ota.js: a full install and an unplug during the write against a simulated FM-1
 // - fm1backup.js (Jangada, v5): a complete backup of the editor's mock device and its restore into an
@@ -33,8 +34,9 @@ const proto = html.slice(html.indexOf("/*PROTO-BEGIN*/"), html.indexOf("/*PROTO-
 const E = vm.runInNewContext(proto + `
 ;({ frame, unframe, parse, req, Link, parseWav, resample, normalize, rootFromName, buildSlot, makeMockDevice, CMD, SMP,
    UP, bank, capturePatch, auditionPatch, startWatch, libraryFile, readLibraryFile, paramKeys, patternFromSteps, stepsFromPattern, upName,
-   mixer, GM_DRUM, drumName, parseNotes })`,
-{ setTimeout, clearTimeout, setInterval, clearInterval, console });
+   mixer, GM_DRUM, drumName, parseNotes,
+   CHOP, chopNovelty, chopHits, chopSnap, chopGrid, chopEqual, chopList, chopPick, chopFit, chopZones, wavFile, zipStore })`,
+{ setTimeout, clearTimeout, setInterval, clearInterval, console, TextEncoder });
 
 async function editorMock() {
   const m = E.makeMockDevice();
@@ -557,6 +559,80 @@ function samplesMatch() {
   ok(eq(js.hdr, pyHdr) && eq(js.data, pyData), `samples: editor == sampleio.py (${files.length} WAV formats, ${js.data.length} B)`);
 }
 
+/* ------------------------------------------- CHOP (pure helpers; Jangada, after SLOOP 2.3) --- */
+function chopTests() {
+  const R = E.SMP.RATE, N = R * 4;
+  /* a break: 8 hits (kick-like and snare-like, loud and ghost) on a quiet noise floor */
+  let seed = 7;
+  const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 2 ** 32) * 2 - 1;
+  const x = new Float64Array(N);
+  for (let i = 0; i < N; i++) x[i] = rnd() * 0.002;
+  const HITS = [0.10, 0.52, 0.93, 1.31, 1.80, 2.26, 2.70, 3.33].map((t) => Math.round(t * R));
+  const AMP = [1, 0.8, 0.25, 0.9, 1, 0.3, 0.85, 0.7];
+  HITS.forEach((h, k) => {
+    for (let i = 0; i < R * 0.3 && h + i < N; i++) {
+      const env = Math.exp(-i / (k % 2 ? 1500 : 3000)) * AMP[k];
+      x[h + i] += env * (k % 2 ? rnd() * 0.8 : Math.sin(2 * Math.PI * 60 * i / R) * 0.9 + rnd() * 0.1);
+    }
+  });
+  const nov = E.chopNovelty(x), hits = E.chopHits(x, nov, 5);
+  const near = (a, b, ms) => Math.abs(a - b) <= ms * R / 1000;
+  ok(hits.length === HITS.length && hits.every((h, i) => near(h, HITS[i] - E.CHOP.PRE, 3)),
+    `chop: hits found (${hits.length} of ${HITS.length}, each within 3 ms of its attack)`);
+  ok(E.chopHits(x, nov, 1).length < HITS.length && E.chopHits(x, nov, 1).length >= 4, "chop: low sensitivity keeps the hard hits only");
+  const late = E.chopSnap(x, nov, HITS[3] + 0.035 * R), early = E.chopSnap(x, nov, HITS[4] - 0.03 * R), none = E.chopSnap(x, nov, 1.1 * R);
+  ok(near(late, HITS[3] - E.CHOP.PRE, 3) && near(early, HITS[4] - E.CHOP.PRE, 3) && none === Math.round(1.1 * R),
+    "chop: a TAP 35 ms late / 30 ms early lands on its hit; away from hits it stays");
+  const grid = E.chopGrid(0, Math.round(R * 60 / 90 * 16), 90, 1);
+  ok(grid.length === 16 && grid[1] === Math.round(R * 60 / 90) && E.chopEqual(100, 900, 4).join() === "100,300,500,700",
+    "chop: grid (16 beats at 90 BPM) and equal parts");
+  const list = E.chopList([10, 50, 400], 1000, 100);
+  ok(list.map((c) => `${c.start}-${c.end}`).join() === "10-50,50-150,400-500", "chop: chops end at the next marker or the max length");
+  const chops = E.chopList(hits, N), zones = E.chopZones(x, chops, 60, 0);
+  const peak = (s) => s.reduce((a, v) => Math.max(a, Math.abs(v)), 0);
+  ok(zones.length === 8 && zones.every((z, i) => z.root === 60 + i && z.lo === z.root && z.hi === z.root && z.s[0] === 0)
+    && Math.abs(peak(zones[2].s) / peak(zones[0].s) - 0.25) < 0.05 && zones[0].fname === "CHOP01_C4.wav" && zones[1].fname === "CHOP02_C#4.wav",
+    "chop: one key each from C4, levels kept (a ghost stays quiet), faded in");
+  const one = E.chopZones(x, chops, 60, 1, 3);
+  ok(one.length === 1 && one[0].root === 60 && one[0].lo === 0 && one[0].hi === 127 && one[0].fname === "CHOP04_C4.wav",
+    "chop: one chop over the whole keyboard");
+  const slot = E.buildSlot("BREAK", zones), v = new DataView(slot.hdr.buffer);
+  ok(slot.hdr[6] === 8 && slot.hdr[32 + 25] === 60 && slot.hdr[32 + 26] === 60 && slot.hdr[32 + 7 * 28 + 25] === 67 && v.getInt16(32 + 20, true) === 60 * 16
+    && slot.data.length <= E.SMP.MAX_DATA, "chop: slot header (8 zones, one key each)");
+  const w = E.parseWav(E.wavFile(zones[1].s));
+  ok(w.sr === R && w.x.length === zones[1].s.length && Math.abs(w.x[100] * 32768 - zones[1].s[100]) < 2, "chop: WAV writer round trip");
+  const dir = mkdtempSync(join(tmpdir(), "jangada-chop-")), zp = join(dir, "c.zip");
+  writeFileSync(zp, E.zipStore(zones.slice(0, 3).map((z) => ({ name: "BREAK/" + z.fname, data: E.wavFile(z.s) }))));
+  const r = py(`import sys, zipfile
+z = zipfile.ZipFile(sys.argv[1]); assert z.testzip() is None
+print(",".join(i.filename + ":" + str(i.file_size) for i in z.infolist()))`, zp).toString().trim();
+  ok(r === zones.slice(0, 3).map((z) => `BREAK/${z.fname}:${44 + z.s.length * 2}`).join(), "chop: ZIP of the WAVs (Python reads it)");
+
+  /* keep / leave out, own lengths, fit: a recording longer than a slot */
+  const opt = [null, { off: true }, { len: 30 }];
+  const kl = E.chopList([10, 50, 400], 1000, 100, opt);
+  ok(kl.map((c) => `${c.start}-${c.end}${c.off ? "x" : ""}/${c.full}`).join() === "10-50/50,50-150x/400,400-430/1000"
+    && E.chopList([10, 400], 1000, 0, [{ len: 9999 }])[0].end === 400,
+    "chop: options (left out, own length over the max, never past the next marker)");
+  const kz = E.chopZones(x, E.chopList(hits, N, 0, [{}, { off: true }, {}, { off: true }]), 60, 0);
+  ok(kz.length === 6 && kz.map((z) => z.root).join() === "60,61,62,63,64,65" && kz[1].fname === "CHOP03_C#4.wav" && kz[2].fname === "CHOP05_D4.wav",
+    "chop: left-out chops: the kept ones on consecutive keys, files keep their numbers");
+  const L = R * 20, long = new Float64Array(L);
+  for (let i = 0; i < L; i++) long[i] = Math.sin(i * 0.05) * 0.5;
+  const marks = E.chopEqual(0, L, 40), room = E.SMP.MAX_DATA * 2;
+  const all = E.chopList(marks, L), pick = E.chopPick(all);
+  ok(pick.length === 16 && pick[15].i === 15 && E.chopPick(all, 1, 7)[0].i === 7, "chop: 40 chops: the first 16 kept go to the slot; mode 1 the selected");
+  const lo = E.chopList(marks, L, 0, marks.map((_, i) => ({ off: i % 4 !== 0 })));   /* keep 10 of 40 (each 0.5 s) */
+  ok(E.chopPick(lo).length === 10 && E.chopFit(E.chopPick(lo), room) === Infinity, "chop: 20 s recording, 10 chops kept: they fit");
+  const many = E.chopPick(E.chopList(marks, L, 0, marks.map((_, i) => ({ off: i >= 16 })))), Lf = E.chopFit(many, room - many.length);
+  const fitted = many.map((c) => ({ ...c, end: Math.min(c.end, c.start + Lf) }));
+  let built = null;
+  try { built = E.buildSlot("LONG", E.chopZones(long, fitted, 60, 0)); } catch (e) { built = null; }
+  ok(Lf < R * 0.5 && Lf > R * 0.4 && built && built.data.length <= E.SMP.MAX_DATA && built.hdr[6] === 16,
+    `chop: Fit to slot: 16 x 0.5 s cut to ${(Lf / R).toFixed(3)} s each, the slot builds`);
+  ok(E.chopFit([{ start: 0, end: 100 }, { start: 0, end: 300 }], 250) === 150, "chop: fit keeps short chops whole, cuts the long ones");
+}
+
 /* ------------------------------------------------------- packages: JS == Python --- */
 async function packages() {
   const pkg = join(HERE, "../build/felucca.fwsc");
@@ -660,6 +736,7 @@ await editorTracks();
 await editorMixer();
 await editorTrackParam();
 await editorBackup();
+chopTests();
 editorTabs();
 editorIcons();
 samplesMatch();

@@ -71,6 +71,23 @@
   .smp input.name { width: 80px; text-transform: uppercase; }
   .smp input.root { width: 48px; }
   .smp .bad { text-decoration: underline wavy; }
+  /* CHOP (Jangada, after SLOOP 2.3): a recording into a slot, chops of any length */
+  .chop canvas.wave { display: block; width: 100%; height: 150px; margin: 6px 0; border: 1px solid var(--line); cursor: default; touch-action: none; }
+  .chop canvas.wave:focus { outline: 1px solid var(--fg); }
+  .chop .head { margin: 3px 0; }
+  .chop .sep { width: 8px; }
+  .chop input.num { width: 56px; }
+  .chop input[type=range] { width: 90px; accent-color: var(--fg); }
+  .chop button.tap { min-width: 72px; }
+  .chop .chops { display: flex; flex-wrap: wrap; gap: 3px; margin: 4px 0; }
+  .chop .chip { background: none; color: var(--fg); border: 1px solid var(--line); padding: 1px 6px; }
+  .chop .chip.on { background: var(--fg); color: var(--bg); }
+  .chop .chip { display: inline-flex; align-items: center; gap: 3px; cursor: pointer; user-select: none; }
+  .chop .chip input { margin: 0; accent-color: var(--fg); }
+  .chop .chip.off { color: var(--dim); text-decoration: line-through; }
+  .chop .chip.on input { accent-color: var(--bg); }
+  .chop input.len { width: 160px; }
+  .chop .selrow[hidden] { display: none; }
   footer { margin-top: 24px; font-size: 11px; color: var(--dim); }
   .row.pushed .v { font-weight: 600; }
   /* librarian: local library and the device's user bank side by side, stacked on a phone */
@@ -263,6 +280,7 @@
   <section class="panel" id="p-samples" data-tab="samples" data-dev hidden>
     <h2 data-t="samples" data-ic="symbol_waves"></h2>
     <p class="dim" data-t="smpHelp"></p>
+    <div class="smp chop" id="chop"></div>
     <div id="smpslots"></div>
   </section>
 
@@ -801,6 +819,170 @@ function buildSlot(name, zonesIn) {
     hdr[b + 24] = z.idx; hdr[b + 25] = z.lo; hdr[b + 26] = z.hi; hdr[b + 27] = 0;
   });
   return { hdr, data, zones };
+}
+
+/* ------------------------------------------------------------------- chop --- */
+/* Chopping a recording into a slot (the CHOP block of the samples tab; Jangada, after SLOOP 2.2 / 2.3).
+   All at SMP.RATE, positions in samples. These are pure: test_web.mjs runs them. */
+const CHOP = { HOP: 128, MAX: 16, FADE_IN: 22, FADE_OUT: 132, PRE: 32 };   /* 5.8 ms frames; fades 1 / 6 ms; start 1.5 ms early */
+
+/* onset novelty per frame: the rise of the log energy of the signal's first difference (the attack
+   of a hit, not its body), over the louder of the two frames before */
+function chopNovelty(x) {
+  const H = CHOP.HOP, F = Math.ceil(x.length / H), L = new Float64Array(F), P = new Float64Array(F), nov = new Float64Array(F);
+  let top = 1e-12, ptop = 1e-12;
+  for (let f = 0; f < F; f++) {
+    let e = 0, p = 0;
+    for (let i = f * H, n = Math.min(x.length, i + H); i < n; i++) { const d = x[i] - (i ? x[i - 1] : 0); e += d * d; p += x[i] * x[i]; }
+    L[f] = e;
+    P[f] = p;
+    if (e > top) top = e;
+    if (p > ptop) ptop = p;
+  }
+  for (let f = 0; f < F; f++) { L[f] = Math.log10(L[f] / top + 1e-9); P[f] = Math.log10(P[f] / ptop + 1e-9); }   /* 0 = the loudest */
+  for (let f = 0; f < F; f++) {
+    const before = Math.max(f ? L[f - 1] : -9, f > 1 ? L[f - 2] : -9);
+    nov[f] = L[f] > -3.5 ? Math.max(0, L[f] - before) : 0;              /* (under -35 dB: no hit) */
+  }
+  nov.level = P;                                                         /* (log10 power, 0 = the loudest frame) */
+  return nov;
+}
+
+/* the first sample of the hit in frame f: where the signal first reaches 30 % of its peak over the
+   frames f-1..f+2, then PRE samples earlier (the attack is kept whole) */
+function chopAttack(x, f) {
+  const H = CHOP.HOP, a = Math.max(0, (f - 1) * H), b = Math.min(x.length, (f + 3) * H);
+  let pk = 0;
+  for (let i = a; i < b; i++) pk = Math.max(pk, Math.abs(x[i]));
+  for (let i = a; i < b; i++) if (Math.abs(x[i]) >= 0.3 * pk) return Math.max(0, i - CHOP.PRE);
+  return a;
+}
+
+/* hits: sens 1 (only the hardest and loudest) .. 10 (every small one); at least 60 ms apart. A hit is a
+   sharp rise (nov over thr) to a level (its loudest frame within 3) over the gate */
+function chopHits(x, nov, sens) {
+  const k = Math.max(1, Math.min(10, sens)), thr = 0.15 + (10 - k) * 0.08, gate = -(0.5 + k * 0.35);
+  const gap = Math.round(0.06 * SMP.RATE / CHOP.HOP), L = nov.level;
+  const out = [];
+  let last = -1e9;
+  for (let f = 0; f < nov.length - 1; f++) {        /* (a hit on the very first frame counts too) */
+    if (nov[f] < thr || (f && nov[f] < nov[f - 1]) || nov[f] < nov[f + 1]) continue;
+    if (L && Math.max(L[f], L[Math.min(L.length - 1, f + 1)], L[Math.min(L.length - 1, f + 2)]) < gate) continue;
+    if (f - last < gap) {
+      if (out.length && nov[f] > nov[last]) { out[out.length - 1] = chopAttack(x, f); last = f; }
+      continue;
+    }
+    out.push(chopAttack(x, f));
+    last = f;
+  }
+  return out;
+}
+
+/* a tap at pos (as heard) moved to the hit it meant: the strongest attack within +-win s, if any */
+function chopSnap(x, nov, pos, win = 0.05) {
+  const H = CHOP.HOP, w = Math.round(win * SMP.RATE / H), c = Math.round(pos / H);
+  let best = -1, bv = 0.12;
+  for (let f = Math.max(1, c - w); f <= Math.min(nov.length - 1, c + w); f++) if (nov[f] > bv) { bv = nov[f]; best = f; }
+  return best < 0 ? Math.max(0, Math.min(x.length - 1, Math.round(pos))) : chopAttack(x, best);
+}
+
+/* markers every `beats` beats at bpm from start to end */
+function chopGrid(start, end, bpm, beats) {
+  const step = SMP.RATE * 60 / bpm * beats, out = [];
+  for (let p = start; p < end - step * 0.25 && out.length < 64; p += step) out.push(Math.round(p));
+  return out;
+}
+
+/* n equal parts of start..end */
+function chopEqual(start, end, n) {
+  return Array.from({ length: n }, (_, i) => Math.round(start + (end - start) * i / n));
+}
+
+/* the chops of sorted markers: each to the next marker (the last to the end), cut at maxLen samples
+   when maxLen > 0 -> [{start, end, i, off, full}] (all of them; the slot takes CHOP.MAX).
+   opt[i] (optional) = {off: left out of the slot, len: its own length in samples, over maxLen};
+   a chop is never longer than up to the next marker (`full`) */
+function chopList(marks, total, maxLen = 0, opt = null) {
+  return marks.map((m, i) => {
+    const full = Math.max(m + 1, i + 1 < marks.length ? marks[i + 1] : total), o = (opt && opt[i]) || {};
+    let e = full;
+    if (o.len > 0) e = Math.min(e, m + o.len);
+    else if (maxLen > 0) e = Math.min(e, m + maxLen);
+    return { start: m, end: Math.max(m + 1, e), i, off: !!o.off, full };
+  });
+}
+
+/* the chops the slot gets: mode 0 the kept ones, the first CHOP.MAX of them; mode 1 the chop `sel` */
+function chopPick(chops, mode = 0, sel = 0) {
+  if (mode === 1) return chops.length ? [chops[Math.max(0, Math.min(chops.length - 1, sel))]] : [];
+  return chops.filter((c) => !c.off).slice(0, CHOP.MAX);
+}
+
+/* the longest common length L (samples) so the chops, each cut at L, fit in room; Infinity if they fit */
+function chopFit(chops, room) {
+  const len = chops.map((c) => c.end - c.start), sum = (L) => len.reduce((a, n) => a + Math.min(n, L), 0);
+  if (sum(Infinity) <= room) return Infinity;
+  let lo = 0, hi = Math.max(...len);
+  while (lo < hi) { const L = (lo + hi + 1) >> 1; if (sum(L) <= room) lo = L; else hi = L - 1; }
+  return lo;
+}
+
+/* chops -> slot zones {s (Int16Array, one gain for all: their levels are kept), root, lo, hi, fname}.
+   mode 0: the kept chops (chopPick), one key each from key0 (each key plays its chop at its own speed,
+   the keys between are silent); mode 1: the chop `sel` alone over the whole keyboard, at its own speed
+   on key0. The file names keep the chop's own number. */
+function chopZones(x, chops, key0, mode = 0, sel = 0) {
+  const use = chopPick(chops, mode, sel);
+  let pk = 1e-9;
+  for (const c of use) for (let i = c.start; i < c.end; i++) pk = Math.max(pk, Math.abs(x[i]));
+  return use.map((c, j) => {
+    const n = c.end - c.start, s = new Int16Array(n), fi = Math.min(CHOP.FADE_IN, n >> 2), fo = Math.min(CHOP.FADE_OUT, n >> 2);
+    for (let i = 0; i < n; i++) {
+      let g = 1;
+      if (i < fi) g = i / fi;
+      if (i >= n - fo) g = Math.min(g, (n - i) / fo);
+      s[i] = Math.max(-32768, Math.min(32767, Math.trunc(x[c.start + i] / pk * 30000 * g)));
+    }
+    const key = Math.min(127, key0 + (mode === 1 ? 0 : j));
+    return { s, root: key, lo: mode === 1 ? 0 : key, hi: mode === 1 ? 127 : key,
+      fname: `CHOP${String((c.i != null ? c.i : mode === 1 ? sel : j) + 1).padStart(2, "0")}_${NOTE_NAMES[key % 12]}${Math.floor(key / 12) - 1}.wav` };
+  });
+}
+
+/* a mono 16-bit WAV at SMP.RATE */
+function wavFile(s) {
+  const b = new Uint8Array(44 + s.length * 2), v = new DataView(b.buffer);
+  const str = (o, t) => { for (let i = 0; i < t.length; i++) b[o + i] = t.charCodeAt(i); };
+  str(0, "RIFF"); v.setUint32(4, 36 + s.length * 2, true); str(8, "WAVEfmt "); v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true); v.setUint16(22, 1, true); v.setUint32(24, SMP.RATE, true); v.setUint32(28, SMP.RATE * 2, true);
+  v.setUint16(32, 2, true); v.setUint16(34, 16, true); str(36, "data"); v.setUint32(40, s.length * 2, true);
+  for (let i = 0; i < s.length; i++) v.setInt16(44 + i * 2, s[i], true);
+  return b;
+}
+
+/* files [{name, data: Uint8Array}] -> a ZIP (stored, no compression) */
+function zipStore(files) {
+  const parts = [], dir = [];
+  let off = 0;
+  for (const f of files) {
+    const nm = new TextEncoder().encode(f.name), crc = crc32(f.data), h = new Uint8Array(30 + nm.length), v = new DataView(h.buffer);
+    v.setUint32(0, 0x04034B50, true); v.setUint16(4, 20, true); v.setUint32(14, crc, true);
+    v.setUint32(18, f.data.length, true); v.setUint32(22, f.data.length, true); v.setUint16(26, nm.length, true); h.set(nm, 30);
+    const c = new Uint8Array(46 + nm.length), w = new DataView(c.buffer);
+    w.setUint32(0, 0x02014B50, true); w.setUint16(4, 20, true); w.setUint16(6, 20, true); w.setUint32(16, crc, true);
+    w.setUint32(20, f.data.length, true); w.setUint32(24, f.data.length, true); w.setUint16(28, nm.length, true);
+    w.setUint32(42, off, true); c.set(nm, 46);
+    parts.push(h, f.data);
+    dir.push(c);
+    off += h.length + f.data.length;
+  }
+  const size = dir.reduce((a, c) => a + c.length, 0), end = new Uint8Array(22), e = new DataView(end.buffer);
+  e.setUint32(0, 0x06054B50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+  e.setUint32(12, size, true); e.setUint32(16, off, true);
+  const out = new Uint8Array(off + size + 22);
+  let o = 0;
+  for (const p of [...parts, ...dir, end]) { out.set(p, o); o += p.length; }
+  return out;
 }
 
 /* -------------------------------------------------------------- librarian --- */
@@ -1781,6 +1963,18 @@ const TEXT = {
     samples: "サンプル", smpHelp: "WAV をドロップするか選んでください。1 スロットに 16 ファイルまで、モノ 22050 Hz の ADPCM で合計約 7 秒。SAMPLE エンジンの SET（または SLICE エンジンの SRC）で USR1〜USR3 を選ぶと鳴ります。",
     zones: "ゾーン", smpName: "名前", chooseFiles: "ファイルを選ぶ", upload: "書き込む", erase: "消去", clearList: "リストを消す",
     file: "ファイル", root: "ルート", keys: "鍵盤", length: "長さ", remove: "外す",
+    chopOpen: "音を開く", chopHelp: "録音（WAV、MP3、AIFF…）を開くかドロップし、チョップを決めてスロットへ。1 キーに 1 チョップ。長い録音（7 秒以上）でも、使うチョップを選び長さを調整できます。",
+    chopDrop: "ここに録音をドロップ、またはクリック", chopPlay: "▶ 再生", chopStop: "■ 停止", chopTap: "TAP",
+    chopSnap: "アタックに吸着", chopClear: "マーカーを消去", chopHits: "アタック検出", chopSens: "感度",
+    chopGrid: "グリッド", chopEqual: "等分", chopKey: "最初のキー", chopModeKeys: "1 キーに 1 チョップ",
+    chopModeOne: "選択チョップを鍵盤全体に", chopMax: "最大長", chopTo: "送信先", chopZip: "WAV をダウンロード",
+    chopChops: "チョップ", chopTooLong: "スロットに入りません", chopTooMany: "（最大 16 チョップ。残りは使われません）",
+    chopLoaded: "読み込みました: ", chopSent: "チョップを書き込みました ",
+    chopSel: "チョップ", chopKeep: "使う", chopLen: "長さ", chopFull: "次のマーカーまで", chopAll: "すべて使う", chopNone: "すべて外す",
+    chopFit: "スロットに合わせる", chopKept: "使用", chopFitted: "長いチョップを短くしました: 最大 ",
+    chopOverHint: "— チョップを外すか、短くするか、「スロットに合わせる」を押してください",
+    chopKeepHint: "チェックを外したチョップはスロットにも WAV にも入りません。長い録音でも必要な部分だけ選べます。",
+    chopHint: "スペース: 再生中に TAP（停止中は再生/停止）· 1–9 0: 試聴 · ダブルクリック: 追加 · ドラッグ: 移動 · ← →: 微調整 · K: 使う/外す · 下のつまみ: 長さ · Del: 削除 · ホイール: ズーム",
     smpTooBig: "大きすぎます", smpDecodeFail: "読み込めません: ", smpUploading: "書き込み中 USR", smpDone: "書き込みました USR",
     smpFail: "サンプルの書き込みに失敗しました: ", smpErased: "消去しました USR",
     confirmErase: "USR{n} を消去しますか？", confirmUpload: "USR{n} に書き込みますか？ 今の内容は消えます。",
@@ -1847,6 +2041,18 @@ const TEXT = {
     samples: "Samples", smpHelp: "Drop or choose WAV files. Up to 16 files per slot, stored as mono 22050 Hz ADPCM (about 7 s in all). Select USR1–USR3 with SET on the SAMPLE engine (or SRC on the SLICE engine).",
     zones: "zones", smpName: "Name", chooseFiles: "Choose files", upload: "Upload", erase: "Erase", clearList: "Clear list",
     file: "File", root: "Root", keys: "Keys", length: "Length", remove: "Remove",
+    chopOpen: "Open a sound", chopHelp: "Open or drop a recording (WAV, MP3, AIFF…), mark the chops, send them to a slot: one chop per key. Any length: a recording longer than a slot (7 s) works, keep the chops you want and adjust them.",
+    chopDrop: "Drop a recording here, or click", chopPlay: "▶ Play", chopStop: "■ Stop", chopTap: "TAP",
+    chopSnap: "snap to the hit", chopClear: "Clear markers", chopHits: "Find hits", chopSens: "sensitivity",
+    chopGrid: "Grid", chopEqual: "Equal parts", chopKey: "First key", chopModeKeys: "one key per chop",
+    chopModeOne: "selected chop, whole keyboard", chopMax: "max length", chopTo: "Send to", chopZip: "Download WAVs",
+    chopChops: "chops", chopTooLong: "too long for a slot", chopTooMany: "(16 chops at most: the rest are left out)",
+    chopLoaded: "Loaded: ", chopSent: "Chops in ",
+    chopSel: "Chop", chopKeep: "keep", chopLen: "length", chopFull: "Up to the next marker", chopAll: "Keep all", chopNone: "Keep none",
+    chopFit: "Fit to slot", chopKept: "kept", chopFitted: "Long chops shortened to at most ",
+    chopOverHint: "— untick chops, shorten them, or press Fit to slot",
+    chopKeepHint: "Unticked chops go neither to the slot nor to the WAVs: from a long recording, keep only what you want.",
+    chopHint: "space: TAP while it plays (play/stop when stopped) · 1–9 0: listen · double-click: add · drag: move · ← →: nudge · K: keep / leave out · bottom handle: length · Del: remove · wheel: zoom",
     smpTooBig: "too large", smpDecodeFail: "Cannot read: ", smpUploading: "Uploading USR", smpDone: "Uploaded USR",
     smpFail: "Sample upload failed: ", smpErased: "Erased USR",
     confirmErase: "Erase USR{n}?", confirmUpload: "Write to USR{n}? Its current contents will be replaced.",
@@ -2566,6 +2772,7 @@ function splitKeys(files) {
   z.forEach((x, j) => {
     out[x.i] = [j === 0 ? 0 : Math.floor((z[j - 1].root + x.root) / 2) + 1, j === z.length - 1 ? 127 : Math.floor((x.root + z[j + 1].root) / 2)];
   });
+  files.forEach((f, i) => { if (f.lo != null) out[i] = [f.lo, f.hi]; });   /* (chops: their own keys) */
   return out;
 }
 const draftBytes = (d) => d.files.reduce((a, f) => a + ((f.s.length + 1) >> 1), 0);
@@ -2600,6 +2807,8 @@ async function addFiles(k, list) {
 }
 
 function renderSamples() {
+  chopUI();                                         /* (once; then its send buttons follow the device) */
+  chopRender();
   const box = $("smpslots");                        /* the tab says when there are no slots (renderPanels) */
   if (!dev || !dev.smp) { box.replaceChildren(); return; }
   const max = SMP.MAX_DATA;
@@ -2659,12 +2868,12 @@ function renderSamples() {
 
 async function smpInfo() { dev.smp = parse[CMD.SMP_INFO](await rq(req.smpInfo())); }
 
-async function smpUpload(k, prog) {
+async function smpUpload(k, prog, ask = true) {
   const d = smpDraft[k];
-  let built;
-  try { built = buildSlot(d.name, d.files.map((f) => ({ s: f.s, root: f.root }))); }
-  catch (e) { sayK("smpFail", e.message); return; }
-  if (!confirm(t("confirmUpload").replace("{n}", k + 1))) return;
+  let built, done = false;
+  try { built = buildSlot(d.name, d.files.map((f) => ({ s: f.s, root: f.root, lo: f.lo, hi: f.hi }))); }
+  catch (e) { sayK("smpFail", e.message); return false; }
+  if (ask && !confirm(t("confirmUpload").replace("{n}", k + 1))) return false;
   const { hdr, data } = built;
   busy++;
   smpBusy = true;
@@ -2685,6 +2894,7 @@ async function smpUpload(k, prog) {
     r = parse[CMD.SMP_END](await rq(req.smpEnd(k, hdr), { timeout: 2000, retries: 0 }));
     if (r.rc) throw new Error(`end rc ${r.rc} (${SMP_RC[r.rc] || "?"})`);
     sayK("smpDone", `${k + 1}  ${((performance.now() - t0) / 1000).toFixed(1)} s`);
+    done = true;
   } catch (e) {
     if (e.message !== "closed") sayK("smpFail", e.message);
   } finally {
@@ -2693,6 +2903,7 @@ async function smpUpload(k, prog) {
     busy--;
     renderSamples();
   }
+  return done;
 }
 
 async function smpErase(k) {
@@ -2714,6 +2925,428 @@ async function smpErase(k) {
   }
 }
 
+/* ---------------------------------------------------------------- CHOP --- */
+/* Jangada, after SLOOP 2.2 / 2.3. Load a recording, mark the chops (live: TAP / space while it plays, each tap moved to the hit it
+   meant; or by hits, a tempo grid, equal parts; double-click adds, drag moves, Delete removes),
+   audition them (click, keys 1-9 0), keep or leave out each one and set its length (a recording longer
+   than a slot: keep the chops you want, shorten them, or Fit to slot), then one chop per key into
+   USR1..3 or as WAV files. CH.opt[i] = {off, len} goes with marker i. */
+const CH = { x: null, nov: null, name: "", marks: [], opt: [], sel: -1, v0: 0, v1: 1, ctx: null, src: null, t0: 0, raf: 0,
+  drag: -1, dragEnd: false, key0: 60, mode: 0, maxLen: 0, ui: null };
+const chR = () => SMP.RATE;
+const chSecs = (n) => (n / SMP.RATE).toFixed(2) + " s";
+
+function chopChops() { return CH.x ? chopList(CH.marks, CH.x.length, Math.round(CH.maxLen * SMP.RATE), CH.opt) : []; }
+function chopUsed() {                                /* the chops the slot gets, their samples, and each chop's key */
+  const c = chopChops(), use = chopPick(c, CH.mode, Math.max(0, CH.sel)), key = new Map();
+  if (CH.mode === 0) use.forEach((q, j) => key.set(q.i, Math.min(127, CH.key0 + j)));
+  return { all: c, use, n: use.reduce((a, q) => a + (q.end - q.start), 0), key };
+}
+/* the label of chop i: its key, "—" when left out, nothing past the 16 kept ones or over the whole keyboard */
+function chopKeyName(u, i) {
+  if (CH.mode === 1) return "";
+  const c = u.all[i];
+  return c && c.off ? " —" : u.key.has(i) ? " " + noteName(u.key.get(i)) : "";
+}
+function chopOpt(i) { return CH.opt[i] || (CH.opt[i] = { off: false, len: 0 }); }
+function chopKeep(i, keep) {                         /* keep / leave out chop i (keep undefined: toggle) */
+  if (!CH.x || i < 0 || i >= CH.marks.length) return;
+  const o = chopOpt(i);
+  o.off = keep === undefined ? !o.off : !keep;
+  chopRender();
+}
+function chopKeepAll(keep) { if (CH.x) { CH.opt = CH.marks.map((_, i) => ({ ...chopOpt(i), off: !keep })); chopRender(); } }
+function chopSetLen(i, len) {                        /* the length of chop i in samples (0: up to the next marker) */
+  if (!CH.x || i < 0 || i >= CH.marks.length) return;
+  chopOpt(i).len = Math.max(0, Math.round(len));
+  chopRender();
+}
+function chopFitAll() {                              /* shorten the longest kept chops so they all fit the slot */
+  const { use } = chopUsed(), L = chopFit(use, SMP.MAX_DATA * 2 - use.length);   /* (an odd chop takes half a byte more) */
+  if (!isFinite(L)) return;
+  for (const c of use) if (c.end - c.start > L) chopOpt(c.i).len = L;
+  sayK("chopFitted", chSecs(L));
+  chopRender();
+}
+
+async function chopDecode(buf) {                    /* any file the browser decodes -> mono Float64 at SMP.RATE */
+  try { const w = parseWav(buf); return resample(w.x, w.sr, SMP.RATE); } catch (e) { /* not a plain WAV */ }
+  const Ctx = window.OfflineAudioContext || window.webkitOfflineAudioContext;
+  const ab = await new Ctx(1, 1, SMP.RATE).decodeAudioData(buf.slice(0));
+  const x = new Float64Array(ab.length);
+  for (let c = 0; c < ab.numberOfChannels; c++) { const d = ab.getChannelData(c); for (let i = 0; i < d.length; i++) x[i] += d[i] / ab.numberOfChannels; }
+  return x;
+}
+
+async function chopLoad(f) {
+  chopStop();
+  try {
+    const x = await chopDecode(await f.arrayBuffer());
+    if (!x.length) throw new Error("no audio");
+    CH.x = x;
+    CH.nov = chopNovelty(x);
+    CH.name = f.name.replace(/\.[^.]*$/, "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 8) || "CHOP";
+    CH.marks = [];
+    CH.opt = [];
+    CH.sel = -1;
+    CH.v0 = 0;
+    CH.v1 = x.length;
+    sayK("chopLoaded", `${f.name} (${chSecs(x.length)})`);
+  } catch (e) { sayK("smpDecodeFail", `${f.name} (${e.message})`); }
+  chopRender();
+}
+
+/* new markers; opt (aligned with m) their options, else each keeps the options of the marker it was */
+function chopSetMarks(m, opt = null) {
+  const was = new Map(CH.marks.map((v, i) => [v, CH.opt[i]])), seen = new Set(), pairs = [];
+  m.forEach((v, i) => {
+    const p = Math.max(0, Math.min(CH.x.length - 1, Math.round(v)));
+    if (seen.has(p)) return;
+    seen.add(p);
+    const o = opt ? opt[i] : was.get(p);
+    pairs.push([p, o ? { ...o } : { off: false, len: 0 }]);
+  });
+  pairs.sort((a, b) => a[0] - b[0]);
+  CH.marks = pairs.map((q) => q[0]);
+  CH.opt = pairs.map((q) => q[1]);
+  if (CH.sel >= CH.marks.length) CH.sel = CH.marks.length - 1;
+  chopRender();
+}
+function chopAdd(pos) {                              /* a new marker; one within 30 ms is moved there instead */
+  const near = CH.marks.findIndex((m) => Math.abs(m - pos) < 0.03 * chR());
+  const m = CH.marks.slice(), opt = CH.marks.map((_, i) => CH.opt[i]);
+  if (near >= 0) m[near] = pos; else { m.push(pos); opt.push(null); }
+  chopSetMarks(m, opt);
+  CH.sel = CH.marks.indexOf(Math.round(pos));
+  chopDraw();
+}
+
+/* ---- audio */
+function chopCtx() {
+  if (!CH.ctx) CH.ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (CH.ctx.state === "suspended") CH.ctx.resume();
+  return CH.ctx;
+}
+function chopBuffer(a, b) {
+  const ctx = chopCtx(), n = Math.max(1, b - a), buf = ctx.createBuffer(1, n, SMP.RATE), d = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) d[i] = CH.x[a + i];
+  return buf;
+}
+function chopStop() {
+  if (CH.src) { try { CH.src.stop(); } catch (e) { /* ended */ } CH.src = null; }
+  cancelAnimationFrame(CH.raf);
+  if (CH.ui) { CH.ui.play.textContent = t("chopPlay"); chopDraw(); }
+}
+/* play a..b; whole = the transport (a playhead, TAP marks), else an audition */
+function chopPlay(a, b, whole) {
+  if (!CH.x) return;
+  chopStop();
+  const ctx = chopCtx(), src = ctx.createBufferSource();
+  const g = ctx.createGain();
+  src.buffer = chopBuffer(a, b);
+  src.connect(g).connect(ctx.destination);
+  if (!whole) {                                     /* the fades the slot will have */
+    const n = b - a, fo = Math.min(CHOP.FADE_OUT, n >> 2) / SMP.RATE, now = ctx.currentTime + 0.005, end = now + n / SMP.RATE;
+    g.gain.setValueAtTime(1, now);
+    g.gain.setValueAtTime(1, Math.max(now, end - fo));
+    g.gain.linearRampToValueAtTime(0, end);
+  }
+  CH.t0 = ctx.currentTime + 0.005 - a / SMP.RATE;
+  src.start(ctx.currentTime + 0.005);
+  src.onended = () => { if (CH.src === src) { CH.src = null; if (whole) chopStop(); } };
+  CH.src = src;
+  CH.src.whole = whole;
+  if (whole) {
+    CH.ui.play.textContent = t("chopStop");
+    const tick = () => { chopDraw(); if (CH.src === src) CH.raf = requestAnimationFrame(tick); };
+    CH.raf = requestAnimationFrame(tick);
+  }
+}
+/* where the listener is now, in samples (what comes out of the speakers, not what is computed) */
+function chopHeard(ev) {
+  const ctx = CH.ctx;
+  let ct = ctx.currentTime - (ctx.outputLatency || ctx.baseLatency || 0);
+  if (ev && ctx.getOutputTimestamp) {
+    const ts = ctx.getOutputTimestamp();
+    if (ts.performanceTime > 0) ct = ts.contextTime + (ev.timeStamp - ts.performanceTime) / 1000;
+  }
+  return (ct - CH.t0) * SMP.RATE;
+}
+function chopTap(ev) {                               /* TAP while it plays: a marker on the hit you meant */
+  if (!CH.src || !CH.src.whole) return;
+  const p = chopHeard(ev);
+  if (p < 0 || p >= CH.x.length) return;
+  chopAdd(CH.ui.snap.checked ? chopSnap(CH.x, CH.nov, p) : Math.round(p));
+}
+function chopAudition(i) {
+  const c = chopChops()[i];
+  if (!c) return;
+  CH.sel = i;
+  chopPlay(c.start, c.end, false);
+  chopRender();
+}
+
+/* ---- drawing (the page's own two colours) */
+function chopDraw() {
+  const u = CH.ui;
+  if (!u) return;
+  const cv = u.cv, dpr = window.devicePixelRatio || 1, W = Math.max(200, cv.clientWidth), Hh = 150;
+  if (cv.width !== Math.round(W * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(Hh * dpr); }
+  const g = cv.getContext("2d"), cs = getComputedStyle(document.documentElement);
+  const FG = cs.getPropertyValue("--fg").trim(), DIM = cs.getPropertyValue("--dim").trim(), LINE = cs.getPropertyValue("--line").trim();
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, Hh);
+  if (!CH.x) { g.fillStyle = DIM; g.font = "12px sans-serif"; g.fillText(t("chopDrop"), 8, Hh / 2); return; }
+  const x = CH.x, v0 = CH.v0, span = CH.v1 - CH.v0, X = (p) => (p - v0) / span * W, mid = Hh / 2 + 6;
+  const U = chopUsed(), { all: chops, use } = U;
+  const hatch = (a, b) => {                          /* what the slot does not get */
+    g.save(); g.beginPath(); g.rect(a, 12, b - a, Hh - 12); g.clip(); g.strokeStyle = LINE;
+    for (let q = Math.floor(a / 8) * 8 - 8; q < b; q += 8) { g.beginPath(); g.moveTo(q, Hh); g.lineTo(q + 8, 12); g.stroke(); }
+    g.restore();
+  };
+  if (chops.length && chops[0].start > 0) hatch(X(0), X(chops[0].start));
+  chops.forEach((c, i) => {                          /* the chops: the selected one filled, left-out parts hatched */
+    const a = X(c.start), b = X(c.end), f = X(c.full);
+    if (f < 0 || a > W) return;
+    if (i === CH.sel) { g.fillStyle = LINE; g.fillRect(a, 12, b - a, Hh - 12); }
+    if (!use.includes(c)) hatch(a, f); else if (c.end < c.full) hatch(b, f);
+  });
+  g.fillStyle = FG;
+  for (let px = 0; px < W; px++) {                   /* the wave: min / max per pixel */
+    const a = Math.floor(v0 + px / W * span), b = Math.min(x.length, Math.max(a + 1, Math.floor(v0 + (px + 1) / W * span)));
+    let lo = 0, hi = 0;
+    for (let i = a; i < b; i += Math.max(1, (b - a) >> 6)) { if (x[i] < lo) lo = x[i]; if (x[i] > hi) hi = x[i]; }
+    g.fillRect(px, mid - hi * (Hh / 2 - 8), 1, Math.max(1, (hi - lo) * (Hh / 2 - 8)));
+  }
+  g.font = "10px sans-serif";
+  CH.marks.forEach((m, i) => {                       /* the markers, numbered; the chop's key above */
+    const px = X(m);
+    if (px < -1 || px > W + 1) return;
+    g.fillStyle = FG;
+    g.fillRect(Math.round(px), 0, i === CH.sel ? 2 : 1, Hh);
+    g.fillText(String(i + 1) + chopKeyName(U, i), px + 3, 10);
+  });
+  const sc = chops[CH.sel];
+  if (sc) {                                          /* the selected chop's end: a handle at the bottom, drag it */
+    const px = Math.round(X(sc.end));
+    g.fillStyle = FG;
+    g.fillRect(px - 1, Hh - 30, 2, 30);
+    g.beginPath(); g.moveTo(px, Hh - 30); g.lineTo(px - 7, Hh - 38); g.lineTo(px - 7, Hh - 22); g.closePath(); g.fill();
+  }
+  if (CH.src && CH.src.whole && CH.ctx) {            /* the playhead, as heard */
+    const p = X(chopHeard());
+    g.fillStyle = DIM;
+    g.fillRect(Math.round(p), 12, 1, Hh - 12);
+  }
+}
+
+/* ---- the block */
+function chopUI() {
+  const box = $("chop");
+  if (!box || CH.ui) return;
+  const u = CH.ui = {};
+  const file = el("input", { type: "file", accept: "audio/*,.wav,.mp3,.aif,.aiff,.flac,.ogg,.m4a", hidden: true });
+  file.addEventListener("change", () => { if (file.files[0]) chopLoad(file.files[0]); file.value = ""; });
+  u.info = el("span", { class: "dim" });
+  u.cv = el("canvas", { class: "wave", tabindex: "0", title: t("chopHint") });
+  u.play = el("button", { onclick: () => { if (CH.src && CH.src.whole) chopStop(); else if (CH.x) chopPlay(Math.round(CH.v0), CH.x.length, true); } }, t("chopPlay"));
+  u.tap = el("button", { class: "tap", onpointerdown: (e) => { e.preventDefault(); chopTap(e); } }, t("chopTap"));
+  u.snap = el("input", { type: "checkbox", checked: true });
+  u.sens = el("input", { type: "range", min: 1, max: 10, value: 5, title: t("chopSens") });
+  u.bpm = el("input", { type: "number", min: 40, max: 240, step: 0.1, value: 90, class: "num" });
+  u.div = el("select", {}, ...[["1 bar", 4], ["1/2", 2], ["1/4", 1], ["1/8", 0.5], ["1/16", 0.25]].map(([n, v]) => el("option", { value: v, text: n })));
+  u.div.value = "1";
+  u.n = el("select", {}, ...[2, 3, 4, 6, 8, 12, 16].map((n) => el("option", { value: n, text: String(n) })));
+  u.n.value = "8";
+  u.key = el("select", {}, ...Array.from({ length: 49 }, (_, i) => 36 + i).map((n) => el("option", { value: n, text: noteName(n) })));
+  u.key.value = String(CH.key0);
+  u.mode = el("select", {}, el("option", { value: 0, text: t("chopModeKeys") }), el("option", { value: 1, text: t("chopModeOne") }));
+  u.max = el("select", {}, ...[["—", 0], ["0.25 s", 0.25], ["0.5 s", 0.5], ["1 s", 1], ["2 s", 2]].map(([n, v]) => el("option", { value: v, text: n })));
+  u.meter = el("progress", { max: SMP.MAX_DATA * 2, value: 0 });
+  u.room = el("span", { class: "dim" });
+  u.list = el("div", { class: "chops" });
+  /* the selected chop: keep it or not, its length; and all of them at once */
+  u.selName = el("b", { class: "selname" });
+  u.keep = el("input", { type: "checkbox", onchange: () => chopKeep(CH.sel, u.keep.checked) });
+  u.len = el("input", { type: "range", class: "len", min: 10, max: 1000, step: 1, title: t("chopLen"),
+    oninput: () => { const c = chopChops()[CH.sel]; if (c) { const ms = +u.len.value, full = c.full - c.start; chopSetLen(CH.sel, ms >= Math.floor(full / SMP.RATE * 1000) ? 0 : ms * SMP.RATE / 1000); } } });
+  u.lenTxt = el("span", { class: "dim" });
+  u.selPlay = el("button", { onclick: () => chopAudition(CH.sel) }, "▶");
+  u.full = el("button", { onclick: () => chopSetLen(CH.sel, 0) }, t("chopFull"));
+  u.selRow = el("div", { class: "head selrow" }, u.selName, el("label", {}, u.keep, " " + t("chopKeep")),
+    el("span", { text: t("chopLen") }), u.len, u.lenTxt, u.selPlay, u.full);
+  u.fit = el("button", { onclick: chopFitAll }, t("chopFit"));
+  u.send = [0, 1, 2].map((k) => el("button", { ic: "symbol_upload", onclick: () => chopSend(k) }, `USR${k + 1}`));
+  const region = () => {                             /* first..last marker when there are two, else all */
+    const m = CH.marks;
+    return m.length >= 2 ? [m[0], m[m.length - 1]] : [m[0] || 0, CH.x.length];
+  };
+  u.key.addEventListener("change", () => { CH.key0 = +u.key.value; chopRender(); });
+  u.mode.addEventListener("change", () => { CH.mode = +u.mode.value; chopRender(); });
+  u.max.addEventListener("change", () => { CH.maxLen = +u.max.value; chopRender(); });
+  box.append(
+    el("div", { class: "head" }, el("b", { text: "CHOP" }),
+      el("button", { ic: "symbol_folder_open", onclick: () => file.click() }, t("chopOpen")), file, u.info),
+    u.cv,
+    el("div", { class: "head" }, u.play, u.tap, el("label", {}, u.snap, " " + t("chopSnap")),
+      el("button", { onclick: () => { if (CH.x) chopSetMarks([]); } }, t("chopClear")),
+      el("span", { class: "dim", text: t("chopHint") })),
+    el("div", { class: "head" },
+      el("button", { onclick: () => { if (CH.x) chopSetMarks(chopHits(CH.x, CH.nov, +u.sens.value)); } }, t("chopHits")), u.sens,
+      el("span", { class: "sep" }),
+      el("button", { onclick: () => { if (CH.x) { const [a, b] = region(); chopSetMarks(chopGrid(a, b, Math.max(40, +u.bpm.value || 90), +u.div.value)); } } }, t("chopGrid")),
+      u.bpm, el("span", { text: "BPM" }), u.div,
+      el("span", { class: "sep" }),
+      el("button", { onclick: () => { if (CH.x) { const [a, b] = region(); chopSetMarks(chopEqual(a, b, +u.n.value)); } } }, t("chopEqual")), u.n),
+    el("div", { class: "head" }, el("span", { text: t("chopKey") }), u.key, u.mode,
+      el("span", { text: t("chopMax") }), u.max, u.meter, u.room),
+    el("div", { class: "head" }, el("button", { onclick: () => chopKeepAll(true) }, t("chopAll")),
+      el("button", { onclick: () => chopKeepAll(false) }, t("chopNone")), u.fit,
+      el("span", { class: "dim", text: t("chopKeepHint") })),
+    u.list, u.selRow,
+    el("div", { class: "head" }, el("span", { text: t("chopTo") }), ...u.send,
+      el("button", { ic: "symbol_download", onclick: chopZip }, t("chopZip"))));
+  /* the wave: click = select + listen, double-click = a marker, drag a marker, wheel = zoom */
+  const posAt = (e) => { const r = u.cv.getBoundingClientRect(); return CH.v0 + (e.clientX - r.left) / r.width * (CH.v1 - CH.v0); };
+  const markAt = (e) => {
+    const r = u.cv.getBoundingClientRect(), per = (CH.v1 - CH.v0) / r.width;
+    return CH.marks.findIndex((m) => Math.abs(m - posAt(e)) < 5 * per);
+  };
+  const endAt = (e) => {                            /* on the selected chop's end handle (the bottom of the wave)? */
+    const c = chopChops()[CH.sel];
+    if (!c) return false;
+    const r = u.cv.getBoundingClientRect(), per = (CH.v1 - CH.v0) / r.width;
+    return e.clientY - r.top > r.height - 40 && Math.abs(c.end - posAt(e)) < 7 * per;
+  };
+  u.cv.addEventListener("pointerdown", (e) => {
+    if (!CH.x) { file.click(); return; }
+    u.cv.focus();
+    if (endAt(e)) { CH.dragEnd = true; u.cv.setPointerCapture(e.pointerId); return; }
+    const k = markAt(e);
+    if (k >= 0) { CH.drag = k; CH.sel = k; u.cv.setPointerCapture(e.pointerId); chopDraw(); return; }
+    const p = posAt(e), i = chopChops().findIndex((c) => p >= c.start && p < c.end);
+    if (i >= 0) chopAudition(i);
+  });
+  u.cv.addEventListener("pointermove", (e) => {
+    if (CH.dragEnd) {                                /* the selected chop's length; up to the next marker = full */
+      const c = chopChops()[CH.sel];
+      if (!c) return;
+      const n = Math.round(Math.max(0.01 * SMP.RATE, Math.min(c.full - c.start, posAt(e) - c.start)));
+      chopOpt(CH.sel).len = n >= c.full - c.start ? 0 : n;
+      chopDraw();
+      return;
+    }
+    if (CH.drag < 0) { u.cv.style.cursor = CH.x && (markAt(e) >= 0 || endAt(e)) ? "ew-resize" : "default"; return; }
+    const m = CH.marks, k = CH.drag, lo = k ? m[k - 1] + 1 : 0, hi = k + 1 < m.length ? m[k + 1] - 1 : CH.x.length - 1;
+    m[k] = Math.round(Math.max(lo, Math.min(hi, posAt(e))));
+    chopDraw();
+  });
+  u.cv.addEventListener("pointerup", () => {
+    if (CH.dragEnd) { CH.dragEnd = false; chopRender(); }
+    if (CH.drag >= 0) { CH.drag = -1; chopRender(); }
+  });
+  u.cv.addEventListener("dblclick", (e) => { if (CH.x) chopAdd(u.snap.checked ? chopSnap(CH.x, CH.nov, posAt(e), 0.02) : Math.round(posAt(e))); });
+  u.cv.addEventListener("wheel", (e) => {
+    if (!CH.x) return;
+    e.preventDefault();
+    const n = CH.x.length, span = CH.v1 - CH.v0;
+    if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      const d = (e.deltaX || e.deltaY) / 400 * span, v0 = Math.max(0, Math.min(n - span, CH.v0 + d));
+      CH.v0 = v0; CH.v1 = v0 + span;
+    } else {
+      const p = posAt(e), z = Math.exp(e.deltaY / 300), ns = Math.max(SMP.RATE * 0.05, Math.min(n, span * z));
+      CH.v0 = Math.max(0, Math.min(n - ns, p - (p - CH.v0) / span * ns));
+      CH.v1 = CH.v0 + ns;
+    }
+    chopDraw();
+  }, { passive: false });
+  u.cv.addEventListener("keydown", (e) => {
+    if (!CH.x) return;
+    const k = e.key;
+    if (k === " ") { e.preventDefault(); if (CH.src && CH.src.whole) chopTap(e); else chopPlay(Math.round(CH.v0), CH.x.length, true); }
+    else if (k === "Enter" || k === "Escape") { e.preventDefault(); if (CH.src) chopStop(); else chopPlay(Math.round(CH.v0), CH.x.length, true); }
+    else if (/^[0-9]$/.test(k)) { e.preventDefault(); chopAudition(k === "0" ? 9 : +k - 1); }
+    else if ((k === "Delete" || k === "Backspace") && CH.sel >= 0) {
+      e.preventDefault();
+      chopSetMarks(CH.marks.filter((_, i) => i !== CH.sel), CH.marks.map((_, i) => CH.opt[i]).filter((_, i) => i !== CH.sel));
+    }
+    else if ((k === "k" || k === "K") && CH.sel >= 0) { e.preventDefault(); chopKeep(CH.sel); }
+    else if ((k === "ArrowLeft" || k === "ArrowRight") && CH.sel >= 0) {   /* nudge the selected marker: 2 ms, shift 20 ms */
+      e.preventDefault();
+      const m = CH.marks.slice();
+      m[CH.sel] += (k === "ArrowLeft" ? -1 : 1) * Math.round((e.shiftKey ? 0.02 : 0.002) * SMP.RATE);
+      const keep = CH.sel;
+      chopSetMarks(m, CH.marks.map((_, i) => CH.opt[i]));
+      CH.sel = keep;
+      chopRender();
+    }
+  });
+  box.addEventListener("dragover", (e) => { e.preventDefault(); box.classList.add("over"); });
+  box.addEventListener("dragleave", () => box.classList.remove("over"));
+  box.addEventListener("drop", (e) => { e.preventDefault(); box.classList.remove("over"); if (e.dataTransfer.files[0]) chopLoad(e.dataTransfer.files[0]); });
+  window.addEventListener("resize", () => chopDraw());
+  chopRender();
+}
+
+function chopRender() {
+  const u = CH.ui;
+  if (!u) return;
+  const U = chopUsed(), { all, use, n } = U, room = SMP.MAX_DATA * 2, over = use.reduce((a, q) => a + ((q.end - q.start + 1) >> 1), 0) > SMP.MAX_DATA;
+  const kept = all.filter((c) => !c.off).length;
+  u.info.textContent = CH.x ? `${CH.name} · ${chSecs(CH.x.length)} · ${all.length} ${t("chopChops")}` +
+    (kept < all.length ? ` (${kept} ${t("chopKept")})` : "") : t("chopHelp");
+  u.meter.value = Math.min(room, n);
+  u.room.textContent = `${chSecs(n)} / ${chSecs(room)}` + (over ? " " + t("chopTooLong") + " " + t("chopOverHint") : "") +
+    (CH.mode === 0 && kept > CHOP.MAX ? " " + t("chopTooMany") : "");
+  u.room.className = over ? "bad" : "dim";
+  u.fit.disabled = !over;
+  u.send.forEach((b) => { b.disabled = !use.length || over || smpBusy || !dev || !dev.smp; });
+  u.list.replaceChildren(...all.map((c, i) => {      /* a chip per chop: the box keeps it, the rest listens */
+    const box = el("input", { type: "checkbox", title: t("chopKeep"), onclick: (e) => { e.stopPropagation(); chopKeep(i, box.checked); } });
+    box.checked = !c.off;
+    return el("span", {
+      class: "chip" + (i === CH.sel ? " on" : "") + (use.includes(c) ? "" : " off"),
+      title: `${chSecs(c.start)} · ${chSecs(c.end - c.start)}` + (c.end < c.full ? ` / ${chSecs(c.full - c.start)}` : ""),
+      onclick: () => chopAudition(i),
+    }, box, `${i + 1}` + chopKeyName(U, i));
+  }));
+  const c = all[CH.sel];                             /* the selected chop's row */
+  u.selRow.hidden = !c;
+  if (c) {
+    const full = c.full - c.start;
+    u.selName.textContent = `${t("chopSel")} ${CH.sel + 1}${chopKeyName(U, CH.sel)}`;
+    u.keep.checked = !c.off;
+    u.len.max = String(Math.max(10, Math.floor(full / SMP.RATE * 1000)));
+    u.len.value = String(Math.round((c.end - c.start) / SMP.RATE * 1000));
+    u.lenTxt.textContent = `${chSecs(c.end - c.start)} / ${chSecs(full)}`;
+    u.full.disabled = c.end >= c.full;
+  }
+  chopDraw();
+}
+
+/* the chops into slot k's list (it shows below), then the usual upload */
+async function chopSend(k) {
+  if (!CH.x || smpBusy) return;
+  const { use } = chopUsed();
+  if (!use.length) return;
+  const zones = chopZones(CH.x, chopChops(), CH.key0, CH.mode, Math.max(0, CH.sel));   /* (the kept ones) */
+  smpDraft[k].name = CH.name;
+  smpDraft[k].files = zones;
+  renderSamples();
+  if (await smpUpload(k)) sayK("chopSent", `USR${k + 1}: ${zones.length} ${t("chopChops")}, ${noteName(zones[0].lo === 0 ? zones[0].root : zones[0].lo)}…`);
+}
+
+function chopZip() {
+  if (!CH.x) return;
+  const zones = chopZones(CH.x, chopChops(), CH.key0, CH.mode, Math.max(0, CH.sel));
+  if (!zones.length) return;
+  const blob = new Blob([zipStore(zones.map((z) => ({ name: `${CH.name}/${z.fname}`, data: wavFile(z.s) })))], { type: "application/zip" });
+  const a = el("a", { href: URL.createObjectURL(blob), download: `jangada-chop-${CH.name.toLowerCase()}.zip` });
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
 /* ---------------------------------------------------------- mixer (v3) --- */
 /* dev.mix = TRACK reply + pan per track ({sel, ntrk, tracks: [{engine, preset, level, mute, armed, pan}]}).
    Read on connect, after every RELOAD / sound change, with the slow safety DUMP and when the tab opens.
