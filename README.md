@@ -9,10 +9,29 @@
 
 # Jangada 🛶
 
-**Alternative firmware for the M-VAVE FM-1** — ten synth engines (6-operator FM among them), a superwave analog, a
-modulation matrix, latched drones, ratchets and four tracks, on a €70 pocket synth.
+**Alternative firmware for the M-VAVE FM-1, with a dark, industrial and Brazilian accent.**
+Drones that breathe on their own, rust, machines and manguebeat on a €70 pocket synth: ten synth engines
+(6-operator FM among them), a superwave analog, a modulation matrix, ratchets and four tracks.
 A fork of [Felucca](https://github.com/hugelton/Felucca) by Leo Kuroshita (Hügelton Instruments).
 A *felucca* is a Nile sailboat; a *jangada* is the Brazilian one.
+
+## Philosophy
+
+Jangada does not want to be a compendium of the other FM-1 firmwares. It has a taste:
+
+- **Dark and industrial.** For people who think of Nine Inch Nails, *The Downward Spiral*, *Ghosts I–IV*,
+  film scores: sounds with rust, grain, worn tape, a hum underneath, broken pianos.
+- **Drones as a language.** A chord that holds and breathes on its own while you play the rest is the
+  most Jangada idea of all, and it will grow: drones that evolve, tension that opens slowly.
+- **Brazilian.** A *jangada* is a boat from the Brazilian northeast. **Manguebeat** (Chico Science &
+  Nação Zumbi) already crossed maracatu with industrial weight: that is our crossing. Kits of alfaia,
+  zabumba and agogô, maracatu, baião and coco patterns, northeastern scales.
+- **Made to be played live.** Hold a button and everything changes, effects that come in with one
+  finger, nothing that makes you stare at the screen.
+
+We bring in the good things from the other forks (Felucca, SLOOP, Melodee) when they serve that taste,
+always with Jangada's name and look and with credit to whoever made them. What is only more of the same
+stays out.
 
 > **Alpha.** Use at your own risk. The FM-1's boot area is never touched, and you can go back to
 > the official firmware at any time.
@@ -209,8 +228,13 @@ sh tests/run_tests.sh         # every test, on the PC
 
 ## Next
 
-- A UI pass for legibility (Felucca 1.0's antialiased font).
-- An FM6 patch editor in the web editor; `.syx` preset backup.
+1. **Grit on the master**: tape (wow, flutter, saturation), fuzz and foldback, ring mod, the hum underneath.
+2. **Our own kits**: RUST, FORGE, PISTON, HURT and **MANGUE** (alfaia, zabumba, agogô, maracatu snare,
+   cuíca), with maracatu, baião and coco patterns and northeastern scales.
+3. **The Studio in the browser**: hear and play Jangada on the site, without an FM-1.
+4. **An FM6 patch bank** and DX7 `.syx` import and export.
+
+Then: drones that evolve, broken pianos, RUST, ASH and MANGUE palettes, the jangada on the boot screen.
 
 ## Credits and license
 

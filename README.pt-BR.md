@@ -9,10 +9,28 @@
 
 # Jangada 🛶
 
-**Firmware alternativo para o M-VAVE FM-1**: dez motores de síntese (com FM de 6 operadores), um analógico com superwave,
-matriz de modulação, drones que se sustentam sozinhos, ratchets e quatro trilhas, num synth de
-bolso baratinho. Um fork do [Felucca](https://github.com/hugelton/Felucca) de Leo Kuroshita
-(Hügelton Instruments). A felucca é o barco à vela do Nilo; a jangada é a nossa.
+**Firmware alternativo para o M-VAVE FM-1, com sotaque escuro, industrial e brasileiro.**
+Drones que respiram sozinhos, ferrugem, máquinas e manguebeat num synth de bolso baratinho: dez motores
+de síntese (com FM de 6 operadores), um analógico com superwave, matriz de modulação, ratchets e quatro
+trilhas. Um fork do [Felucca](https://github.com/hugelton/Felucca) de Leo Kuroshita (Hügelton
+Instruments). A felucca é o barco à vela do Nilo; a jangada é a nossa.
+
+## Filosofia
+
+A Jangada não quer ser um compêndio dos outros firmwares do FM-1. Ela tem um gosto:
+
+- **Escuro e industrial.** Para quem pensa em Nine Inch Nails, *The Downward Spiral*, *Ghosts I–IV*,
+  trilhas de cinema: sons com ferrugem, grão, fita gasta, zumbido de fundo, pianos quebrados.
+- **Drones como linguagem.** Um acorde que se sustenta e respira sozinho enquanto você toca o resto é
+  a ideia mais nossa, e vai crescer: drones que evoluem, tensão que abre devagar.
+- **Brasileiro.** Jangada é nome de barco do Nordeste. O **manguebeat** (Chico Science & Nação Zumbi)
+  já juntava maracatu com peso industrial: é esse o nosso cruzamento. Kits de alfaia, zabumba e agogô,
+  padrões de maracatu, baião e coco, escalas nordestinas.
+- **Feito para tocar ao vivo.** Segurar um botão e mudar tudo, efeitos que entram com um dedo, nada
+  que obrigue a olhar a tela.
+
+Trazemos o que há de bom nos outros forks (Felucca, SLOOP, Melodee) quando serve a esse gosto, sempre
+com o nome e a cara da Jangada e com os créditos de quem fez. O que é só mais do mesmo fica de fora.
 
 > **Alfa.** Use por sua conta e risco. A área de boot do FM-1 nunca é tocada, e dá para voltar ao
 > firmware oficial a qualquer momento.
@@ -211,8 +229,13 @@ sh tests/run_tests.sh         # todos os testes, no PC
 
 ## Próximos passos
 
-- Uma revisão da interface, para legibilidade (a fonte suavizada do Felucca 1.0).
-- Editor de patches FM6 no editor web; backup de presets em `.syx`.
+1. **Grit no master**: fita (wow, flutter e saturação), fuzz e foldback, ring mod, o zumbido de fundo.
+2. **Kits próprios**: RUST, FORGE, PISTON, HURT e **MANGUE** (alfaia, zabumba, agogô, caixa de
+   maracatu, cuíca), com padrões de maracatu, baião e coco e escalas nordestinas.
+3. **O Studio no navegador**: ouvir e tocar a Jangada no site, sem o FM-1.
+4. **Banco de patches FM6** e importação e exportação de `.syx` do DX7.
+
+Depois: drones que evoluem, pianos quebrados, paletas RUST, ASH e MANGUE, a jangada na tela de boot.
 
 ## Créditos e licença
 
