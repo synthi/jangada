@@ -483,15 +483,15 @@ static void layers_knobs(uint32_t layer)
     }
 }
 
-/* the key LEDs while a layer is shown: what is on (an effect, an unmuted track, a solo), else the first
- * key of each row of tiles (1, 5, 9, 13) to find them without looking */
+/* the key LEDs while a layer is shown: what is on (an effect, an unmuted track, a solo); the first key
+ * of each row of FX tiles (1, 5, 9, 13) glows dimly (layers_key_glow) to find them without looking */
 static uint32_t layers_key_leds(void)
 {
     uint32_t w, m = 0, layer = layer_now();
     for (w = 0; w < 16u; w++) {
         int on = 0;
         if (layer == LY_FX)
-            on = punch.req == (int8_t)w || (punch.req < 0 && (w & 3u) == 0u);
+            on = punch.req == (int8_t)w;
         else if (layer == LY_MIX)
             on = w < 4u ? !trk[w].p[P_MUTE] : w < 8u ? (int)((song.solo >> (w - 4u)) & 1u) : w == 15u;
         else if (layer == LY_ENGINE)                    /* the track's engine; T4 SYNTH */
@@ -510,12 +510,17 @@ static uint32_t layers_key_leds(void)
     return m;
 }
 
-static void layers_leds(uint8_t *nl)                   /* ui_leds: the keys, and the layer's button */
+static uint32_t layers_key_glow(void)                  /* dim: the FX landmarks (Jangada, after SLOOP) */
 {
-    uint32_t k, m = layers_key_leds() | fm1_in.notes;
-    for (k = 0; k < 27u; k++)
-        led_put(nl, 14u + k, (int)((m >> k) & 1u));
+    if (layer_now() != LY_FX)
+        return 0u;
+    return 1u << key_of_white(0) | 1u << key_of_white(4) | 1u << key_of_white(8) | 1u << key_of_white(12);
+}
+
+static uint32_t layers_leds(uint8_t *nl)               /* ui_leds: the layer's button; the keys lit */
+{
     led_put(nl, panel.btn[LAYER_BTN[layer_now()]], ly.lock ? (int)((fm1_ms >> 8) & 1u) : 1);   /* locked: blinks */
+    return layers_key_leds() | fm1_in.notes;
 }
 
 /* ----------------------------------------------------------- drawing --- */

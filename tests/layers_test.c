@@ -59,7 +59,8 @@ static uint32_t scope_w;
 #define FM1_NCOL 8
 static const int8_t FM1_KEYMAP[6][FM1_NCOL];
 #define FM1_TICKS_PER_US 1
-static uint8_t fm1_led[FM1_NCOL];
+static uint8_t fm1_led[FM1_NCOL], fm1_led_dim[FM1_NCOL], fm1_led_bg[FM1_NCOL];
+static uint16_t fm1_led_bg_ns;
 #include "ui_input.c"
 #include "upreset.c"
 #include "project.c"
@@ -148,4 +149,20 @@ int main(void){
    assert(!ncut);
  }
  printf("%-46s ok\n", "columns: no label / value / unit cut (Inter Tight)");
+ { /* menu LIGHTS / KEYS / NOTES (after SLOOP 2.3): which keys glow, which light; the settings word */
+   uint32_t m, w; int n = 0;
+   lights_lvl = 0; lights_keys = KEYS_C; assert(!lights_keys_mask());           /* KEYS needs LIGHTS */
+   lights_lvl = LIGHTS_LOW; m = lights_keys_mask(); assert(m == (1u << 7 | 1u << 19));   /* C4, C5 */
+   lights_keys = KEYS_WHITE; m = lights_keys_mask(); for (; m; m &= m - 1) n++; assert(n == 16);
+   lights_notes = 1; usb_full = 1; lights_lvl = LIGHTS_HIGH; w = lights_word();
+   lights_lvl = lights_keys = lights_notes = usb_full = 0; lights_from_word(w);
+   assert(lights_lvl == LIGHTS_HIGH && lights_keys == KEYS_WHITE && lights_notes && usb_full);
+   lights_from_word(0xFFFFFFFFu); assert(!lights_lvl && !lights_keys);       /* a damaged word: off */
+   song.sel = 0; trk[0].p[P_VOICE] = V_POLY; song.octave = 0;
+   trk_note_on(&trk[0], kb_map(&trk[0], 7), 100);                            /* a note sounding: its key */
+   assert(keys_sounding(&trk[0]) == 1u << 7);
+   trk_all_off(&trk[0]); assert(!keys_sounding(&trk[0]));
+   lights_lvl = lights_keys = lights_notes = usb_full = 0;
+ }
+ printf("%-46s ok\n", "menu LIGHTS / KEYS / NOTES: keys, settings word");
  return 0;}

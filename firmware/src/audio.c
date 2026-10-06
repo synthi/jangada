@@ -30,7 +30,8 @@ static void audio_block(int32_t *out, uint32_t n)       /* mix (fx.c), then Q15 
     uint32_t i;
     mix_block(out, n);
 #if FELUCCA_UAC
-    uac_tap(out, n);                                    /* the USB audio input: the same master output (usb.c) */
+    uac_tap(usb_full_now ? usb_out : out, n);           /* the USB audio input: the master output (usb.c), or at
+                                                         * full level (menu USB AUDIO = FULL: fx.c usb_full_block) */
 #endif
     for (i = 0; i < n; i++) {
         if (i & 1u)
@@ -87,6 +88,7 @@ void fm1_alnk0_irq(void)                       /* via isr_alnk0 (hal/fm1_isr.S) 
         }
 #if FELUCCA_UAC
         uac_render_start();
+        usb_full_now = (uint8_t)(usb_full && uac.feed);  /* menu USB AUDIO = FULL, while the computer records */
 #endif
         for (b = 0; b < HALF_FRAMES; b += CTL)
             audio_block(o + 2u * b, CTL);

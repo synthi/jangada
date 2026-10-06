@@ -125,7 +125,7 @@ with the sound, the engine, the steps and the playhead, the level and the REC / 
 
 ### USB audio
 The FM-1 shows up on the computer as a stereo audio input (44.1 kHz, "Jangada"), no driver needed:
-record the master straight into the DAW (on Linux: `arecord -D hw:Jangada -f S16_LE -r 44100 -c 2 take.wav`).
+record the master straight into the DAW (HOME → USB AUDIO: the level follows MASTER, or FULL) (on Linux: `arecord -D hw:Jangada -f S16_LE -r 44100 -c 2 take.wav`).
 
 ### Storage and safety
 - **Autosave**: stopped and untouched for a few seconds, the project goes to flash and comes back at
@@ -134,7 +134,13 @@ record the master straight into the DAW (on Linux: `arecord -D hw:Jangada -f S16
   before it lets the new firmware start.
 - **USB rescue**: **OCT−** held at power-on (or two failed boots) opens JANGADA USB RESCUE, where only
   the installer runs. Panel calibration: **OCT− + OCT+** at power-on.
-- Menu (hold **HOME**): COLOR, SPEAKER (low cut for the speaker), NEW PROJECT, ABOUT.
+- Menu (hold **HOME**): COLOR, SPEAKER (low cut for the speaker), LIGHTS, KEYS, NOTES, USB AUDIO, NEW
+  PROJECT, ABOUT. KNOB 1 sets the row's value.
+- **Lights for the dark**: **LIGHTS** OFF / LOW / MID / HIGH makes every button glow dimly (the labels
+  read in the dark; the lit ones stay full); **KEYS** lights the C keys or every white key too; **NOTES**
+  lights the key of every sounding note (sequencer, MIDI, drums), on every page and layer. The glow is a
+  short pulse on every scan: no flicker. Kept with the device's settings, not in the project.
+- **USB AUDIO**: MASTER (the recording follows the MASTER knob) or FULL (a fixed level, MASTER all the way up).
 
 ### Drones
 The DRONE presets run the arpeggiator in **RPT** every **4 bars** with **HOLD**: play a chord,

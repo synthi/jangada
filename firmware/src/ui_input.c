@@ -32,11 +32,59 @@ static uint32_t cur_fam(void) { return ui.home ? FAM_HOME : cur_page()->fam; }
 
 static int layer_visible(void);                     /* ui_layers.c */
 static uint32_t layer_now(void);
-static void layers_leds(uint8_t *nl);
+static uint32_t layers_leds(uint8_t *nl);
+static uint32_t layers_key_glow(void);
+
+/* Jangada (after SLOOP 2.3, @renebohne's NOTES): what sounds on track t, as keys (bit k = key k, 0 = F3).
+ * A synth track: the voices still held, mapped back through the keyboard (octave, scale, chords). The
+ * drum track: each hit lights its key ~100 ms */
+static uint32_t keys_sounding(const track_t *t)
+{
+    static uint32_t seen, until[27];
+    uint32_t i, k, m = 0;
+    if (is_drum(t)) {
+        for (i = 0; i < NDRUM; i++) {
+            const voice_t *v = &drums.v[i];
+            if (v->active && (int32_t)(v->age - seen) > 0)
+                for (k = 0; k < 27u; k++)
+                    if (DRUM_KEYS[k] == v->note)
+                        until[k] = fm1_ms + 100u;
+        }
+        seen = drums.age;
+        for (k = 0; k < 27u; k++)
+            if ((int32_t)(until[k] - fm1_ms) > 0)
+                m |= 1u << k;
+        return m;
+    }
+    for (i = 0; i < NVOICE; i++) {
+        const voice_t *v = &t->v[i];
+        if (v->active && v->gate && v->stage <= 2u)
+            for (k = 0; k < 27u; k++)
+                if (kb_map(t, k) == v->note)
+                    m |= 1u << k;
+    }
+    return m;
+}
+
+static uint32_t lights_keys_mask(void)             /* menu KEYS: the Cs, or every white key (with LIGHTS) */
+{
+    uint32_t k, m = 0;
+    if (!lights_lvl || !lights_keys)
+        return 0u;
+    for (k = 0; k < 27u; k++) {
+        uint32_t pc = (53u + k) % 12u;             /* key 0 = F3 (53) */
+        if (lights_keys == KEYS_C ? pc == 0u : ((0xAB5u >> pc) & 1u) != 0u)   /* 0xAB5: C D E F G A B */
+            m |= 1u << k;
+    }
+    return m;
+}
+
+/* three layers of light (fm1_input.h): lit (nl), the glow (dl: landmarks, NOTES under a layer's keys)
+ * and the backlight (bl: menu LIGHTS, every button and the KEYS) */
 static void ui_leds(void)
 {
-    uint8_t nl[FM1_NCOL] = {0};
-    uint32_t k, c;
+    uint8_t nl[FM1_NCOL] = {0}, dl[FM1_NCOL] = {0}, bl[FM1_NCOL] = {0};
+    uint32_t k, c, keys, glow = 0, back, sounding = lights_notes ? keys_sounding(TSEL) : 0u;
     uint32_t fam = cur_fam();
     static uint8_t ready;
     if (!ready) {
@@ -49,13 +97,26 @@ static void ui_leds(void)
     led_put(nl, panel.btn[B_OCTDN], song.octave < 0);
     led_put(nl, panel.btn[B_OCTUP], song.octave > 0);
     if (layer_visible()) {                              /* Jangada: a layer shows what its keys do */
-        layers_leds(nl);
+        keys = layers_leds(nl);                         /* (its button; the keys it lights) */
+        glow = (layers_key_glow() | sounding) & ~keys;  /* landmarks; NOTES: what sounds glows under the keys */
     } else {
-        for (k = 0; k < 27u; k++)
-            led_put(nl, 14u + k, (int)((fm1_in.notes >> k) & 1u));
+        keys = fm1_in.notes | sounding;                 /* menu NOTES: what sounds lights its key */
     }
-    for (c = 0; c < FM1_NCOL; c++)
+    back = lights_keys_mask() & ~keys & ~glow;
+    for (k = 0; k < 27u; k++) {
+        led_put(nl, 14u + k, (int)((keys >> k) & 1u));
+        led_put(dl, 14u + k, (int)((glow >> k) & 1u));
+        led_put(bl, 14u + k, (int)((back >> k) & 1u));
+    }
+    if (lights_lvl)                                     /* menu LIGHTS: every button glows, the lit ones full */
+        for (k = 0; k < NB; k++)
+            led_put(bl, panel.btn[k], 1);
+    for (c = 0; c < FM1_NCOL; c++) {
         fm1_led[c] = nl[c];
+        fm1_led_dim[c] = dl[c];
+        fm1_led_bg[c] = (uint8_t)(bl[c] & ~nl[c]);
+    }
+    fm1_led_bg_ns = LIGHTS_NS[lights_lvl % LIGHTS_N];
 }
 
 /* ---------------------------------------------------------- input --- */

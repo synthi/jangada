@@ -23,6 +23,9 @@
 #include "params.c"
 #include "voice.c"
 #include "slicer.c"          /* per-track SLICER insert, used by fx.c */
+#ifndef FELUCCA_UAC
+#define FELUCCA_UAC 1            /* USB audio input (Felucca 1.0.1): the master, 16-bit stereo 44.1 kHz (usb.c; fx.c: USB AUDIO FULL) */
+#endif
 #include "fx.c"
 #ifndef FELUCCA_OTA
 #define FELUCCA_OTA 1            /* M-UPGRADE update entry; needs FELUCCA_FLASH */
@@ -35,9 +38,6 @@
 #endif
 #ifndef FELUCCA_CDC
 #define FELUCCA_CDC 1            /* USB CDC-ACM serial console */
-#endif
-#ifndef FELUCCA_UAC
-#define FELUCCA_UAC 1            /* USB audio input (Felucca 1.0.1): the master, 16-bit stereo 44.1 kHz (usb.c) */
 #endif
 #ifndef FELUCCA_UAC_TONE
 #define FELUCCA_UAC_TONE 0       /* bench: the USB input sends test triangles instead of the music */

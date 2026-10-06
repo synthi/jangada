@@ -125,7 +125,7 @@ por trilha com o som, o motor, os passos e o playhead, o nível e os selos REC /
 
 ### Áudio por USB
 O FM-1 aparece no computador como uma entrada de áudio estéreo (44,1 kHz, "Jangada"), sem driver:
-grave o master direto na DAW (no Linux: `arecord -D hw:Jangada -f S16_LE -r 44100 -c 2 take.wav`).
+grave o master direto na DAW (HOME → USB AUDIO: o nível segue o MASTER, ou FULL) (no Linux: `arecord -D hw:Jangada -f S16_LE -r 44100 -c 2 take.wav`).
 
 ### Memória e segurança
 - **Autosave**: parado e sem mexer por alguns segundos, o projeto vai para a flash e volta ao ligar.
@@ -134,7 +134,14 @@ grave o master direto na DAW (no Linux: `arecord -D hw:Jangada -f S16_LE -r 4410
   CRC antes de liberar o firmware novo.
 - **Resgate por USB**: **OCT−** segurado ao ligar (ou dois boots que falham) abre JANGADA USB RESCUE,
   onde só o instalador roda. A calibração do painel: **OCT− + OCT+** ao ligar.
-- Menu (segure **HOME**): COLOR, SPEAKER (corta graves para o alto-falante), NEW PROJECT, ABOUT.
+- Menu (segure **HOME**): COLOR, SPEAKER (corta graves para o alto-falante), LIGHTS, KEYS, NOTES, USB AUDIO,
+  NEW PROJECT, ABOUT. KNOB 1 muda o valor da linha.
+- **Luzes para o escuro**: **LIGHTS** OFF / LOW / MID / HIGH faz todos os botões brilharem fraco (dá para
+  ler os rótulos no escuro; os acesos continuam cheios); **KEYS** acende também as teclas C ou todas as
+  brancas; **NOTES** acende a tecla de cada nota que soa (sequencer, MIDI, bateria), em toda página e
+  camada. O brilho fraco é um pulso curto a cada varredura: não pisca. Ficam salvos com as
+  configurações do aparelho, não no projeto.
+- **USB AUDIO**: MASTER (a gravação segue o knob MASTER) ou FULL (nível fixo, como o MASTER no máximo).
 
 ### Drones
 Os presets DRONE usam o arpejador em **RPT** a cada **4 compassos** com **HOLD**: toque um acorde,

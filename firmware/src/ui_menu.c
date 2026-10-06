@@ -1,17 +1,23 @@
 /* SPDX-License-Identifier: GPL-3.0-only
  * Copyright (C) 2026 Leo Kuroshita (@kurogedelic), Hügelton Instruments */
-/* Menu (HOME held): COLOR, SPEAKER (the low cut for the small speaker), NEW PROJECT, ABOUT.
- * Jangada: ZOOM and HARDWARE CALIBRATION left the menu (calibration: OCT- + OCT+ held at power-on). */
+/* Menu (HOME held): COLOR, SPEAKER (the low cut for the small speaker), LIGHTS, KEYS, NOTES (the panel
+ * in the dark), USB AUDIO (the level the computer records), NEW PROJECT, ABOUT.
+ * Jangada: ZOOM and HARDWARE CALIBRATION left the menu (calibration: OCT- + OCT+ held at power-on).
+ * LIGHTS, KEYS, NOTES and USB AUDIO: Jangada, after SLOOP 2.3 (settings of the FM-1, panel.c). */
 /* ------------------------------------------------------------ menu --- */
-enum { MI_COLOR, MI_SPEAKER, MI_NEW, MI_ABOUT, MI_BACK, MI_COUNT };
-static const char *const MI_NAME[MI_COUNT] = {"COLOR", "SPEAKER", "NEW PROJECT", "ABOUT", "BACK"};
+enum { MI_COLOR, MI_SPEAKER, MI_LIGHTS, MI_KEYS, MI_NOTES, MI_USB, MI_NEW, MI_ABOUT, MI_BACK, MI_COUNT };
+static const char *const MI_NAME[MI_COUNT] = {"COLOR", "SPEAKER", "LIGHTS", "KEYS", "NOTES", "USB AUDIO",
+                                              "NEW PROJECT", "ABOUT", "BACK"};
+static const char *const LIGHTS_NAME[LIGHTS_N] = {"OFF", "LOW", "MID", "HIGH"};
+static const char *const KEYS_NAME[KEYS_N] = {"OFF", "C KEYS", "WHITE KEYS"};
+#define MI_DY 19                                    /* rows between two menu lines */
 static uint8_t menu_new_armed;                      /* NEW PROJECT: OCT+ once arms, again clears */
 static void felucca_init(void);                     /* main.c */
 
 static void draw_menu(void)
 {
     uint32_t i, pass, sig = ui.menu * 7u + ui.menu_sel * 131u + settings.palette * 1009u + settings.lowcut * 7919u +
-                            menu_new_armed * 104729u;
+                            menu_new_armed * 104729u + lights_word() * 1299709u;
     if (!ui.force && sig == ui.menu_sig)
         return;
     ui.menu_sig = sig;
@@ -43,25 +49,36 @@ static void draw_menu(void)
                     cv_text(10, 119 + (int32_t)i * 12, &FONT_S, CR[i], C_GRAY);
             }
         } else {
+            static const char *const HINT[MI_COUNT] = {
+                "", "ON: LESS BASS (SPEAKER)", "BUTTONS GLOW IN THE DARK", "KEYS GLOW TOO (WITH LIGHTS)",
+                "SOUNDING NOTES LIGHT THEIR KEYS", "", "EVERY TRACK BACK TO START", "", ""};
+            const char *hint = HINT[ui.menu_sel % MI_COUNT];
             for (i = 0; i < MI_COUNT; i++) {          /* a row card each, the selected one lit */
-                int32_t y = 4 + (int32_t)i * 24;
+                int32_t y = 3 + (int32_t)i * MI_DY;
                 int sel = i == ui.menu_sel;
-                cv_rrect(4, y - 3, 232, 22, 5, sel ? C_SEL : C_SURF, C_BG);
-                cv_text(14, y, &FONT_S, MI_NAME[i], sel ? C_WHITE : C_GRAY);
-                if (i == MI_SPEAKER)
-                    cv_text(110, y, &FONT_S, settings.lowcut ? "LOW CUT ON" : "OFF", C_HI);
+                const char *v = i == MI_SPEAKER ? (settings.lowcut ? "LOW CUT ON" : "OFF") :
+                                i == MI_LIGHTS ? LIGHTS_NAME[lights_lvl % LIGHTS_N] :
+                                i == MI_KEYS ? KEYS_NAME[lights_keys % KEYS_N] :
+                                i == MI_NOTES ? (lights_notes ? "ON" : "OFF") :
+                                i == MI_USB ? (usb_full ? "FULL" : "MASTER") : 0;
+                cv_rrect(4, y - 2, 232, 17, 5, sel ? C_SEL : C_SURF, C_BG);
+                cv_text(14, y - 1, &FONT_S, MI_NAME[i], sel ? C_WHITE : C_GRAY);
+                if (v)                                  /* (KEYS needs LIGHTS: gray while it is off) */
+                    cv_text(110, y - 1, &FONT_S, v, i == MI_KEYS && !lights_lvl ? C_GRAY : C_HI);
                 if (i == MI_COLOR) {
                     uint32_t k;
-                    cv_text(90, y, &FONT_S, PALETTES[settings.palette].name, C_HI);
+                    cv_text(90, y - 1, &FONT_S, PALETTES[settings.palette].name, C_HI);
                     for (k = 0; k < 5u; k++)
-                        cv_rrect(160 + (int32_t)k * 14, y + 2, 11, 11, 2, pal[k], sel ? C_SEL : C_SURF);
+                        cv_rrect(160 + (int32_t)k * 14, y + 1, 11, 11, 2, pal[k], sel ? C_SEL : C_SURF);
                 }
             }
-            cv_text(4, 146, &FONT_S, ui.menu_sel == MI_SPEAKER ? "ON: LESS BASS (SPEAKER)" :
-                                     ui.menu_sel != MI_NEW ? "" : menu_new_armed ? "OCT+ AGAIN: CLEAR ALL" :
-                                     "EVERY TRACK BACK TO START", menu_new_armed ? C_WHITE : C_GRAY);
-            cv_text(4, 170, &FONT_S, "PRESETS MOVE", C_DIM);
-            cv_text(4, 188, &FONT_S, "OCT+ OK   OCT- BACK", C_DIM);
+            if (ui.menu_sel == MI_USB)
+                hint = usb_full ? "FIXED LEVEL, NOT THE KNOB" : "FOLLOWS THE MASTER KNOB";
+            if (ui.menu_sel == MI_NEW && menu_new_armed)
+                hint = "OCT+ AGAIN: CLEAR ALL";
+            cv_text(4, 3 + MI_COUNT * MI_DY, &FONT_S, hint[0] ? hint : "PRESETS MOVE   KNOB 1 SET",
+                    menu_new_armed ? C_WHITE : hint[0] ? C_GRAY : C_DIM);
+            cv_text(4, 3 + MI_COUNT * MI_DY + 15, &FONT_S, "OCT+ OK   OCT- BACK", C_DIM);
         }
         cv_oy = 0;
         cv_blit(0, H_HEAD + 1 + pass * 124u);
@@ -77,7 +94,10 @@ static void enc_drop(void)                             /* knob turns nobody take
 
 static void menu_close(void)
 {
-    settings_save();                                   /* palette / panel table, if changed */
+    if (song.playing)
+        settings_later = 1;                            /* (saved once stopped: project.c autosave_tick) */
+    else
+        settings_save();                               /* palette, lights, panel table, if changed */
     ui.menu = 0;
     ui.force = 1;
     go_home();
@@ -103,6 +123,26 @@ static void menu_input(uint32_t pressed)
     if (s != 0 && ui.menu == 1 && ui.menu_sel == MI_COLOR) {
         settings.palette = (settings.palette + (s > 0 ? 1u : NPALETTES - 1u)) % NPALETTES;
         palette_set(settings.palette);              /* (the menu signature redraws) */
+    }
+    if ((s != 0 || ok) && ui.menu == 1 && (ui.menu_sel == MI_NOTES || ui.menu_sel == MI_USB)) {
+        /* KNOB 1: right = ON / FULL, left = OFF / MASTER; OCT+ toggles */
+        uint8_t *v = ui.menu_sel == MI_NOTES ? &lights_notes : &usb_full;
+        *v = (uint8_t)(s > 0 ? 1u : s < 0 ? 0u : !*v);
+        ok = 0;
+    }
+    if ((s != 0 || ok) && ui.menu == 1 && (ui.menu_sel == MI_LIGHTS || ui.menu_sel == MI_KEYS)) {
+        /* KNOB 1: brighter / more keys (stops at the ends); OCT+ steps round */
+        uint8_t *v = ui.menu_sel == MI_LIGHTS ? &lights_lvl : &lights_keys;
+        uint32_t n = ui.menu_sel == MI_LIGHTS ? LIGHTS_N : KEYS_N;
+        if (s > 0 && *v + 1u < n)
+            (*v)++;
+        else if (s < 0 && *v > 0u)
+            (*v)--;
+        else if (!s)
+            *v = (uint8_t)((*v + 1u) % n);
+        if (ui.menu_sel == MI_KEYS && lights_keys && !lights_lvl)
+            lights_lvl = LIGHTS_LOW;                   /* keys lit need a level: the lowest */
+        ok = 0;
     }
     if ((s != 0 || ok) && ui.menu == 1 && ui.menu_sel == MI_SPEAKER) {
         /* KNOB 1: right = ON, left = OFF; OCT+ toggles */
