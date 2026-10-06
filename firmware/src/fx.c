@@ -372,6 +372,7 @@ static void fx_buses(const int32_t *cho_in, const int32_t *dly_in, const int32_t
 /* one block of the whole mix (shared with tests/hostsim.c): events -> each part
  * -> dist -> SLICER -> level / pan / sends -> drums (-> SLICER) -> buses -> master; out: stereo Q15 */
 static void events_block(uint32_t n);                    /* seq.c */
+static uint32_t clk_adv;                                 /* seq.c: units the beat clock moved this block */
 static int32_t send_c[CTL], send_d[CTL], send_r[CTL], wet[CTL], wet_r[CTL], mix_l[CTL], mix_r[CTL], part_buf[CTL];
 
 /* ---- Jangada: the beat clock (after SLOOP), in units of a sample at 1 BPM: a beat is BEAT_U at any
@@ -558,7 +559,7 @@ static void mix_block(int32_t *out, uint32_t n)
     for (i = 0; i < n; i++)
         send_c[i] = send_d[i] = send_r[i] = mix_l[i] = mix_r[i] = 0;
     events_block(n);
-    duck_block(n * (uint32_t)song.g[G_BPM]);
+    duck_block(clk_adv);                                /* (n x BPM, or the MIDI clock's units: seq.c) */
     for (i = 0; i < NTRK; i++)
         if (trk_synth(i))
             mix_part(&trk[i], n);

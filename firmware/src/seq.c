@@ -271,6 +271,21 @@ static uint32_t step_samples(const track_t *t, uint32_t period, uint32_t idx)
     return period + (uint32_t)((idx & 1u) ? -sw : sw);
 }
 
+/* Jangada (after SLOOP 2.3): while a MIDI clock drives the sequencer (seq_u, events_block), seq_pos
+ * counts units (a sample at 1 BPM, fx.c BEAT_U a beat) and a step is a whole number of the master's
+ * pulses: DIV in 1/24 beat x BEAT_U / 24, the swing as for samples (BEAT_U / 24 / 250 = 441 exactly).
+ * With the internal clock it counts samples, as ever. */
+static uint8_t seq_u;                               /* (fx.c DIV_Q24, BEAT_U) */
+static uint32_t seq_len(const track_t *t, uint32_t idx)   /* step idx as seq_pos counts it */
+{
+    uint32_t div = (uint32_t)t->p[P_SDIV] % 10u;
+    int32_t sw;
+    if (!seq_u)
+        return step_samples(t, div_samples(div), idx);
+    sw = (t->p[P_SSWING] + song.g[G_SWING]) * (int32_t)(441u * DIV_Q24[div]);
+    return BEAT_U / 24u * DIV_Q24[div] + (uint32_t)((idx & 1u) ? -sw : sw);
+}
+
 /* live recording: the note goes into the nearest step, as swung (the one playing, or
  * the next one when it is past the middle of the playing one). Overdub: a step that
  * holds notes gets this one added (a chord of up to 4; when full, the last note is
@@ -283,8 +298,7 @@ static uint32_t step_samples(const track_t *t, uint32_t period, uint32_t idx)
 static void rec_note(track_t *t, uint32_t note, uint32_t vel)
 {
     uint32_t len = t->p[P_SLEN] > 0 ? (uint32_t)t->p[P_SLEN] : 1u, idx = t->seq_idx % len, k;
-    uint32_t period = div_samples((uint32_t)t->p[P_SDIV]);
-    uint32_t next = t->seq_pos > step_samples(t, period, t->seq_idx) / 2u;
+    uint32_t next = t->seq_pos > seq_len(t, t->seq_idx) / 2u;
     step_t *s;
     if (next)
         idx = (idx + 1u) % len;
@@ -362,7 +376,7 @@ static void rec_release(track_t *t, uint32_t note)
     if (k == t->rh_n || (t->rh_n = (uint8_t)k))
         return;                                     /* not one of them, or others still held */
     if (t->rh_ties && t->seq_idx == t->rh_last &&
-        t->seq_pos < step_samples(t, div_samples((uint32_t)t->p[P_SDIV]), t->seq_idx) / 2u)
+        t->seq_pos < seq_len(t, t->seq_idx) / 2u)
         t->step[t->rh_last] = t->rh_bak;            /* released early in it: not held into this step */
 }
 
@@ -482,6 +496,7 @@ static void keyboard_block(void)
 
 static void midi_rt_out(uint32_t b);                /* Jangada: MIDI clock out (below) */
 static uint32_t mclk_out;
+static void mclk_restart(void);
 
 /* -------------------------------------------------------- sequencer --- */
 static void seq_start(void)
@@ -498,8 +513,9 @@ static void seq_start(void)
     clk_pos = 0;                                   /* fx.c: the beat clock, step 0 on the beat */
     clk_beat = 0;
     mclk_out = 0;
-    if (song.g[G_SYNC] == 1 && song.g[G_CLOCK] != 1)
-        midi_rt_out(0xFAu);                        /* Jangada: MIDI START (SYNC OUT) */
+    mclk_restart();                                /* following a clock: from its next pulse */
+    if (song.g[G_SYNC] == 1 && !song.g[G_CLOCK])
+        midi_rt_out(0xFAu);                        /* Jangada: MIDI START (SYNC OUT), not while following */
     song.playing = 1;
     slicer_start();                                /* slicer.c: its step 0 with the sequencer's */
 }
@@ -517,7 +533,7 @@ static void seq_release(track_t *t)
 static void seq_stop(void)
 {
     uint32_t i;
-    if (song.playing && song.g[G_SYNC] == 1 && song.g[G_CLOCK] != 1)
+    if (song.playing && song.g[G_SYNC] == 1 && !song.g[G_CLOCK])
         midi_rt_out(0xFCu);                        /* Jangada: MIDI STOP (SYNC OUT) */
     song.playing = 0;
     for (i = 0; i < NTRK; i++) {
@@ -612,7 +628,9 @@ static void seq_ratchet(track_t *t, uint32_t n)
         trk_note_on(t, s->note[i], vel);
 }
 
-static void seq_tick(track_t *t, uint32_t n)
+/* n samples; adv: what seq_pos moves (n, or the units of the MIDI clock: seq_u). The gates and the
+ * ratchets count samples in both */
+static void seq_tick(track_t *t, uint32_t n, uint32_t adv)
 {
     uint32_t period = div_samples((uint32_t)t->p[P_SDIV]), len = (uint32_t)t->p[P_SLEN];
     if (t->seq_n && !t->seq_hold) {
@@ -625,12 +643,15 @@ static void seq_tick(track_t *t, uint32_t n)
         return;
     if (t->rat_left)
         seq_ratchet(t, n);
-    t->seq_pos += n;
+    if (!adv)
+        return;                                    /* (the clock's START: waiting for its first pulse) */
+    t->seq_pos += adv;
     for (;;) {
-        uint32_t cur_len = step_samples(t, period, t->seq_idx);
-        if (t->seq_pos < cur_len && t->seq_pos != 0x7FFFFFFFu + n)
+        uint32_t cur_len = seq_len(t, t->seq_idx);
+        if (t->seq_pos < cur_len && t->seq_pos != 0x7FFFFFFFu + adv)
             break;
-        t->seq_pos = t->seq_pos >= 0x7FFFFFFFu ? 0 : t->seq_pos - cur_len;
+        t->seq_pos = t->seq_pos >= 0x7FFFFFFFu ? (seq_u ? adv : 0u) : t->seq_pos - cur_len;   /* (step 0 at the
+                                                    * block start; the clock counts the block from there) */
         t->seq_idx = (uint16_t)((t->seq_idx + 1u) % (len ? len : 1u));
         rec_hold(t, t->seq_idx, len ? len : 1u);
         {
@@ -717,34 +738,127 @@ static void midi_cc(track_t *t, uint32_t cc, uint32_t v)
     }
 }
 
-/* MIDI clock in (GLO > GLOBAL CLK USB): the tempo of the last beat (24 clocks), measured every 6;
- * START / CONTINUE / STOP drive the transport. Out (GLO > SYSTEM SYNC OUT): 24 clocks a beat from
- * the beat clock (fx.c clk_pos), START / STOP with the transport; never while following one */
+/* MIDI clock in (GLO > GLOBAL CLK USB or TRS; Jangada, after SLOOP 2.3 / Felucca 1.0's midi_clock.c,
+ * from contributions by ChanceTheMaker and keremimo): 24 pulses a beat. While the clock runs, the
+ * sequencer and the beat clock (fx.c clk_pos: punch-in FX, DUCK, the TRACKS screen) advance by the
+ * pulses (a pulse = BEAT_U / 24 units), interpolated up to the next one from the last interval but never
+ * past it, so they follow the master's tempo changes and cannot drift (0.2 measured the tempo every 6
+ * pulses and ran on its own clock: it drifted). BPM shows the master's tempo, every 24 pulses (the arp,
+ * delay and SLICER follow it). START restarts from the top, CONTINUE carries on where it stopped, STOP
+ * stops. With no pulse for 0.5 s the internal clock takes over (PLAY works as ever). Time is counted in
+ * samples (midi_now): the queue is read at block starts, so arrivals and the interpolation share it.
+ * Out (GLO > SYSTEM SYNC OUT): 24 clocks a beat from the beat clock, START / STOP with the transport;
+ * never while CLK is USB or TRS. */
 static uint32_t midi_now;                           /* samples since boot (block resolution) */
-static uint32_t mclk_t[25], mclk_n, mclk_out;
+#define MCLK_PULSE_U (BEAT_U / 24u)
+#define MCLK_GONE (FS / 2u)                         /* no pulse for this long: the internal clock */
+static struct {
+    uint32_t pos, done;          /* units: the master's position (pulses since START), ours */
+    uint32_t last, iv;           /* samples: the last pulse, the interval between pulses (smoothed) */
+    uint32_t beat;               /* when pulse 0 of the last 24 came: the tempo */
+    uint8_t have, n24;           /* a pulse since START; pulses towards the next tempo reading */
+    uint8_t alive;               /* pulses are coming (from the CLK source) */
+    uint8_t wait;                /* START / CONTINUE seen, its first pulse not yet (since `start`) */
+    uint32_t start;
+} mclk;
 
-static void midi_clock_in(uint32_t b)
+static int mclk_on(void)                            /* the clock drives the sequencer */
 {
-    if (song.g[G_CLOCK] != 1)
+    return song.g[G_CLOCK] && ((mclk.alive && midi_now - mclk.last < MCLK_GONE) ||
+                               (mclk.wait && midi_now - mclk.start < MCLK_GONE));   /* (a START waits for its pulse) */
+}
+
+static void mclk_restart(void)                      /* START, or PLAY: the next pulse is the downbeat */
+{
+    mclk.pos = mclk.done = 0;
+    mclk.have = 0;
+}
+
+static __attribute__((noinline)) void midi_clock_in(uint32_t b, uint32_t src)   /* a realtime byte; src 1 USB, 2 TRS */
+{
+    uint32_t now = midi_now;
+    if (!song.g[G_CLOCK] || src != (uint32_t)song.g[G_CLOCK])
         return;
-    if (b == 0xF8u) {
-        uint32_t span;
-        mclk_t[mclk_n % 25u] = midi_now;
-        mclk_n++;
-        if (mclk_n >= 25u && !(mclk_n % 6u)) {
-            span = midi_now - mclk_t[(mclk_n - 25u) % 25u];   /* 24 clocks = one beat */
-            if (span)
-                song.g[G_BPM] = (int16_t)clamp((int32_t)((60u * FS + span / 2u) / span), GP[G_BPM].min, GP[G_BPM].max);
-        }
-    } else if (b == 0xFAu) {
-        mclk_n = 0;
-        transport_req = 1;
-    } else if (b == 0xFBu) {
-        if (!song.playing)
-            transport_req = 1;
-    } else if (b == 0xFCu) {
-        transport_req = 2;
+    if (b == 0xFAu || b == 0xFBu) {                 /* START, CONTINUE: the clock drives from now on */
+        mclk.wait = 1;
+        mclk.start = now;
     }
+    if (b == 0xFAu) {                               /* START: from the top (seq_start: mclk_restart) */
+        transport_req = 1;
+        return;
+    }
+    if (b == 0xFBu) {                               /* CONTINUE: on from where it stopped, the next pulse one */
+        if (!song.playing) {                        /* pulse on from the last one (what was played past it */
+            uint32_t past = mclk.have ? mclk.done - mclk.pos : 0u;   /* counts) */
+            mclk.pos = 0;
+            mclk.done = past < MCLK_PULSE_U ? past : 0u;
+            mclk.have = 1;
+            song.playing = 1;                       /* (no seq_start: the steps stay where they are) */
+        }
+        return;
+    }
+    if (b == 0xFCu) {                               /* STOP */
+        transport_req = 2;
+        return;
+    }
+    if (b != 0xF8u)
+        return;
+    if (mclk.alive && now - mclk.last < FS / 5u) {  /* the interval, smoothed (a gap is not a tempo) */
+        uint32_t iv = now - mclk.last;
+        mclk.iv = mclk.iv ? (mclk.iv * 3u + iv + 2u) / 4u : iv;
+    }
+    if (!mclk.alive || now - mclk.last >= MCLK_GONE) {   /* (re)started: count a fresh beat */
+        mclk.n24 = 0;
+        mclk.beat = now;
+    } else if (++mclk.n24 == 24u) {                 /* a beat: the tempo */
+        uint32_t dt = now - mclk.beat;
+        mclk.n24 = 0;
+        mclk.beat = now;
+        if (dt)
+            song.g[G_BPM] = (int16_t)clamp((int32_t)((60u * FS + dt / 2u) / dt), GP[G_BPM].min, GP[G_BPM].max);
+    }
+    mclk.alive = 1;
+    mclk.last = now;
+    mclk.wait = 0;
+    if (song.playing || transport_req == 1u) {      /* (a START queued with it: the next block starts) */
+        if (mclk.have)
+            mclk.pos += MCLK_PULSE_U;
+        mclk.have = 1;                              /* the first pulse after START is the downbeat */
+    }
+}
+
+static __attribute__((noinline)) uint32_t mclk_adv(uint32_t n)   /* units to advance this block (mclk_on) */
+{
+    uint32_t el, off = 0, tgt, adv, cap = n * 2u * (uint32_t)song.g[G_BPM];
+    if (!mclk.have)
+        return 0;                                   /* START seen: wait for the downbeat */
+    el = midi_now - mclk.last;
+    if (mclk.iv) {
+        if (el > mclk.iv)
+            el = mclk.iv;
+        off = el * MCLK_PULSE_U / mclk.iv;          /* (iv < FS / 5: el x 110250 fits 32 bits) */
+        if (off >= MCLK_PULSE_U)
+            off = MCLK_PULSE_U - 1u;
+    }
+    tgt = mclk.pos + off;
+    adv = (int32_t)(tgt - mclk.done) > 0 ? tgt - mclk.done : 0u;
+    if (adv > cap)
+        adv = cap;                                  /* behind: catch up at twice the tempo, no burst */
+    mclk.done += adv;
+    return adv;
+}
+
+/* the sequencer changes what seq_pos counts (samples <-> units: seq_len) when a clock comes or goes */
+static __attribute__((noinline)) void seq_units(uint32_t on)
+{
+    uint32_t i, bpm = (uint32_t)song.g[G_BPM];
+    for (i = 0; i < NTRK; i++) {
+        track_t *t = &trk[i];
+        if (t->seq_pos >= 0x7FFFFFFFu)
+            continue;                               /* (step 0 not played yet) */
+        t->seq_pos = on ? t->seq_pos * bpm : t->seq_pos / bpm;
+    }
+    seq_u = (uint8_t)on;
 }
 
 static void midi_rt_out(uint32_t b) { midi_out_event(0x0Fu | b << 8); }
@@ -752,7 +866,7 @@ static void midi_rt_out(uint32_t b) { midi_out_event(0x0Fu | b << 8); }
 static void midi_clock_out(void)                    /* after the beat clock moved */
 {
     uint32_t want;
-    if (song.g[G_SYNC] != 1 || song.g[G_CLOCK] == 1 || !song.playing)
+    if (song.g[G_SYNC] != 1 || song.g[G_CLOCK] || !song.playing)
         return;
     want = clk_beat * 24u + clk_pos / (BEAT_U / 24u) + 1u;   /* the clocks due, the first one at step 0 */
     while (mclk_out < want && want - mclk_out < 8u) {
@@ -763,9 +877,10 @@ static void midi_clock_out(void)                    /* after the beat clock move
 }
 
 /* everything that happens between two rendered blocks */
+static uint32_t clk_adv;                            /* units the beat clock moved this block (fx.c DUCK) */
 static void events_block(uint32_t n)
 {
-    uint32_t i, pr;
+    uint32_t i, pr, adv;
     if (transport_req == 1u) {
         seq_start();
         transport_req = 0;
@@ -825,8 +940,7 @@ static void events_block(uint32_t n)
         d2 = (pkt >> 24) & 0x7Fu;
         mi_r++;
         if ((pkt & 0x0Fu) == 0x0Fu) {                  /* (Jangada: real time, the byte is the status; */
-            if (!(pkt & 0xF0u))                        /* cable 0 USB, 1 the TRS jack: USB only here) */
-                midi_clock_in((pkt >> 8) & 0xFFu);
+            midi_clock_in((pkt >> 8) & 0xFFu, (pkt & 0xF0u) ? 2u : 1u);   /* cable 0 USB, 1 the TRS jack) */
             continue;
         }
         if (st == 0x90u && d2)
@@ -841,14 +955,18 @@ static void events_block(uint32_t n)
             midi_track(ch)->at = (uint8_t)d1;
     }
     midi_now += n;
+    if ((uint32_t)mclk_on() != seq_u)
+        seq_units((uint32_t)mclk_on());             /* a clock came, or stopped coming */
+    adv = seq_u && song.playing ? mclk_adv(n) : n * (uint32_t)song.g[G_BPM];   /* units */
+    clk_adv = adv;
     for (i = 0; i < NTRK; i++)
-        seq_tick(&trk[i], n);
+        seq_tick(&trk[i], n, seq_u ? adv : n);
     for (i = 0; i < NTRK; i++)
         if (trk_synth(i))
             arp_tick(&trk[i], n);
     if (song.playing) {
         song.tick++;
-        clk_pos += n * (uint32_t)song.g[G_BPM];       /* fx.c: the beat clock */
+        clk_pos += adv;                               /* fx.c: the beat clock (the MIDI clock's pulses) */
         while (clk_pos >= BEAT_U) {
             clk_pos -= BEAT_U;
             clk_beat++;

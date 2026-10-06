@@ -116,8 +116,12 @@ por trilha com o som, o motor, os passos e o playhead, o nível e os selos REC /
   padrão 10) a bateria, os outros a trilha selecionada.
 - **Pitch bend** (±2 semitons), **sustain** (CC64), **all notes off** (CC120 / 123), reset (CC121).
 - **Mod wheel**, **aftertouch** e **expressão** (CC11) como origens da matriz (MODW, AT, EXPR).
-- **GLO → GLOBAL CLK USB**: segue o clock do computador (tempo, start, stop).
-- **GLO → SYSTEM SYNC OUT**: manda clock pelo USB (24 por batida, start, stop).
+- **GLO → GLOBAL CLK USB** ou **TRS**: segue o clock MIDI do computador ou do conector TRS, pulso a
+  pulso (24 por batida, sem deriva): os passos, o BPM, o punch FX, o DUCK e a tela TRACKS acompanham;
+  START recomeça do início, CONTINUE retoma de onde parou, STOP para; sem pulso por 0,5 s volta ao
+  relógio interno.
+- **GLO → SYSTEM SYNC OUT**: manda clock pelo USB (24 por batida, start, stop); nunca enquanto segue
+  um clock (CLK USB ou TRS).
 
 ### Áudio por USB
 O FM-1 aparece no computador como uma entrada de áudio estéreo (44,1 kHz, "Jangada"), sem driver:
